@@ -8,10 +8,13 @@
 #include "drivers.h"
 #include "steppers.h"
 #include "motion.h"
+#include "system_state.h"
+#include "safety.h"
 
 namespace console {
 namespace {
-  constexpr uint8_t LINE_MAX = 64;
+  constexpr uint8_t LINE_MAX = 96;
+  constexpr uint8_t MAX_ARGS = 10;
   char    line[LINE_MAX];
   uint8_t len      = 0;
   bool    overflow = false;
@@ -21,12 +24,17 @@ namespace {
   void cmdHelp() {
     Serial.println(F("OK commands:"));
     Serial.println(F("  help              this list"));
-    Serial.println(F("  status            firmware, profile, loop speed"));
+    Serial.println(F("  status            firmware, profile, state, loop speed"));
+    Serial.println(F("  state             current state (and fault reason)"));
+    Serial.println(F("  ack               acknowledge a fault (or hold the encoder 1 s)"));
+    Serial.println(F("  safety            reset cause, last stop reaction time, watchdog"));
+    Serial.println(F("  wdtest            freeze on purpose to test the watchdog"));
     Serial.println(F("  inputs            limit switches and encoder state"));
     Serial.println(F("  watch on|off      print input events live"));
     Serial.println(F("  led g|b|c|r|off [slow|fast]   set status LED"));
     Serial.println(F("  drivers           driver detection, current, microsteps"));
     Serial.println(F("  move <1-6> <amount> [speed]   mm & mm/s (translation) or deg & rpm (rotation)"));
+    Serial.println(F("  mv <axis>=<amount> ... [t=<s>] [v=<%>]   coordinated move, all finish together"));
     Serial.println(F("  stop              stop all motors"));
     Serial.println(F("  pos               positions of all axes"));
     Serial.println(F("  en <1-6|all> / dis <1-6|all>  enable / disable motor drivers"));
@@ -47,6 +55,28 @@ namespace {
     int8_t i = parseAxis(a);
     if (i < 0 || !amt) { Serial.println(F("ERR usage: move <1-6> <amount> [speed]")); return; }
     motion::moveRelative(i, atof(amt), spd ? atof(spd) : 0);
+  }
+
+  // mv 2=30 4=30 6=30 [t=5] [v=50]
+  void cmdMv(uint8_t argc, char** argv) {
+    float amount[hw::NUM_AXES] = { 0 };
+    uint8_t mask = 0;
+    float pct = 100, dur = 0;
+    for (uint8_t k = 1; k < argc; k++) {
+      char* eq = strchr(argv[k], '=');
+      if (!eq) { Serial.print(F("ERR bad argument: ")); Serial.println(argv[k]); return; }
+      *eq = '\0';
+      const char* key = argv[k]; float val = atof(eq + 1);
+      if      (!strcmp(key, "t")) dur = val;
+      else if (!strcmp(key, "v")) pct = val;
+      else {
+        int8_t i = parseAxis(key);
+        if (i < 0) { Serial.print(F("ERR bad axis: ")); Serial.println(key); return; }
+        amount[i] = val; mask |= _BV(i);
+      }
+    }
+    if (!mask) { Serial.println(F("ERR usage: mv <axis>=<amount> ... [t=<s>] [v=<%>]")); return; }
+    motion::moveGroup(amount, mask, pct, dur);
   }
 
   void cmdPos() {
@@ -114,7 +144,8 @@ namespace {
   void cmdStatus() {
     Serial.print(F("OK fw="));       Serial.print(FW_VERSION);
     Serial.print(F(" profile=\""));  Serial.print(hw::PROFILE_NAME);
-    Serial.print(F("\" loops/s="));  Serial.print(loop_stats::loopsPerSecond());
+    Serial.print(F("\" state="));   Serial.print(sys::name(sys::get()));
+    Serial.print(F(" loops/s="));    Serial.print(loop_stats::loopsPerSecond());
     Serial.print(F(" maxloop_us=")); Serial.print(loop_stats::maxLoopUs());
     Serial.print(F(" isr_max_us=")); Serial.print(steppers::isrMaxUs(), 1);
     Serial.print(F(" uptime_s="));   Serial.println(millis() / 1000);
@@ -156,21 +187,26 @@ namespace {
 
   // Split the line into words and dispatch
   void execute(char* s) {
-    char* argv[4] = { nullptr };
+    char* argv[MAX_ARGS] = { nullptr };
     uint8_t argc = 0;
-    for (char* tok = strtok(s, " \t"); tok && argc < 4; tok = strtok(nullptr, " \t"))
+    for (char* tok = strtok(s, " \t"); tok && argc < MAX_ARGS; tok = strtok(nullptr, " \t"))
       argv[argc++] = tok;
     if (argc == 0) return;
     for (char* p = argv[0]; *p; p++) *p = tolower(*p);   // commands are case-insensitive
 
     if      (!strcmp(argv[0], "help"))   cmdHelp();
     else if (!strcmp(argv[0], "status")) cmdStatus();
+    else if (!strcmp(argv[0], "state"))  sys::report();
+    else if (!strcmp(argv[0], "ack"))    { if (sys::acknowledge()) Serial.println(F("OK acknowledged")); }
     else if (!strcmp(argv[0], "inputs")) cmdInputs();
     else if (!strcmp(argv[0], "watch"))  cmdWatch(argv[1]);
     else if (!strcmp(argv[0], "led"))    cmdLed(argv[1], argv[2]);
     else if (!strcmp(argv[0], "drivers")) drivers::report();
     else if (!strcmp(argv[0], "move"))   cmdMove(argv[1], argv[2], argv[3]);
-    else if (!strcmp(argv[0], "stop"))   { motion::stopAll(F("command")); Serial.println(F("OK stop")); }
+    else if (!strcmp(argv[0], "mv"))     cmdMv(argc, argv);
+    else if (!strcmp(argv[0], "stop"))   { safety::userStop(F("command"), micros()); Serial.println(F("OK stop")); }
+    else if (!strcmp(argv[0], "safety")) safety::report();
+    else if (!strcmp(argv[0], "wdtest")) safety::watchdogTest();
     else if (!strcmp(argv[0], "pos"))    cmdPos();
     else if (!strcmp(argv[0], "en"))     cmdEnable(argv[1], true);
     else if (!strcmp(argv[0], "dis"))    cmdEnable(argv[1], false);

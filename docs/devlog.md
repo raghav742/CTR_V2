@@ -37,3 +37,22 @@
 - Load with three translation axes at 20 mm/s: 9,016 loops/s, longest interrupt 29.5 us (tick = 50 us).
 - Added temporary 50 mm cap per translation move until homing exists (a 1200 mm typo was accepted before).
 **Open:** occasional slow loop pass (~4 ms) while printing to USB, to address with a larger serial buffer.
+
+## 2026-10-28 — Step 1.3: Coordinated multi-axis moves
+**What:** `motion` rewritten around move groups with one shared "progress" profile (accelerate, cruise, brake from 0 to 1). Each axis' speed = progress speed x its own distance, so all axes in a move start, accelerate and finish together. Progress limits chosen so no axis exceeds its own max speed or acceleration. New command `mv <axis>=<amount> ... [t=<s>] [v=<%>]`; `move` is now a one-axis group. Done events report elapsed time.
+**Why:** Smooth, coordinated tube motion for demos, record and replay, and laptop control.
+**Simulation:** `mv 2=30 4=30 6=30` predicted 2.00 s, ran 1.98 s; `t=5` ran 4.98 s. Proportionality during a move (30 mm / 10 mm / 3 mm / 90 deg): every axis at 50.7 % of its distance at mid-move.
+**Test on robot (2026-10-28):** All coordinated moves stay in proportion: when the T1 far-end switch stopped a mixed move, every axis (3 rotations, 2 translations) was at 94.7 % of its distance; an encoder stop left all three carriages at the same 8.21 mm. Elapsed times match predictions (1.98/2.00 s, 0.98/1.00 s, 2.11/2.13 s, 2.98/3.00 s). T3 hit its home switch at -0.27 mm twice from different moves (no slip). T1 sits near its far end (far switch after ~19 mm), to be measured during homing.
+
+## 2026-10-28 — Step 1.4: State machine
+**What:** New module `system_state` (namespace `sys`): states BOOT, IDLE (not homed), HOMING, READY (homed), MANUAL, DEMO, ATTRACT, VISITOR, REMOTE, FAULT, with an explicit table of allowed transitions and an LED pattern per state. Moves are refused in BOOT and FAULT. An unexpected limit switch during motion and driver over-temperature now enter FAULT (motion stopped, reason stored); `ack` or a 1 s encoder press acknowledges. Encoder press or `stop` during a normal move only stops, no fault. New commands `state`, `ack`; `status` shows the state. Driver temperature read one driver every 200 ms (UART reads take 1-2 ms each).
+**Why:** One place decides what is allowed; the later modes (homing, demo, manual, laptop) plug into the same table.
+**Simulation:** switch pressed during a move -> stop + "EV state IDLE -> FAULT (T3-home hit)"; moves refused with reason; `ack` -> IDLE; moves work again.
+**Test on robot (2026-10-28):** BOOT -> IDLE at startup. T2-home pressed by hand during a rotation -> stop + "IDLE -> FAULT (T2-home hit)"; moves refused with reason; cleared with `ack` and with a 1 s encoder hold. Short encoder press during motion stops without fault. `status` shows state. Note: drivers report 1,767 mA for translation (requested 1,900; nearest TMC2209 current step with R_sense 0.11 ohm) and 1,491 mA for rotation.
+
+## 2026-10-28 — Step 1.5: Safety manager
+**What:** New module `safety`, the single gatekeeper: every move from any source passes `safety::checkMove()` (driver present/enabled, 50 mm cap until homed, no moving into a pressed switch). Watches limit switches (unexpected press during motion -> FAULT; homing can mark a switch as expected) and driver health round-robin every 200 ms (over-temperature and "driver not answering" -> FAULT). User stops (encoder, `stop`) and switch faults report the measured reaction time from the input edge. Hardware watchdog (1 s): first timeout stops the step interrupt, second resets the board; reset cause reported at startup. New commands `safety`, `wdtest`. Safety code removed from `motion` and `sys`.
+**Why:** One place for all safety rules, so no motion source can bypass them; measured stop response for validation; a frozen program can never leave motors running.
+**Simulation:** switch fault reaction 7.4 ms (5 ms debounce + loop); encoder stop 20.7 ms (20 ms debounce); `wdtest` -> board restarts, reports reset_cause=watchdog.
+**Test on robot:** _to fill in_
+

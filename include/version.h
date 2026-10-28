@@ -1,3 +1,3 @@
 #pragma once
 // Firmware version: <phase>.<step>.<patch>
-#define FW_VERSION "1.2.3"
+#define FW_VERSION "1.5.0"

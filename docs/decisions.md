@@ -14,8 +14,14 @@
 **Measured (simulation):** worst case (all axes at max speed) 45 % CPU in the interrupt.
 **Alternatives:** One hardware timer per axis (the Mega has only 4 usable 16-bit timers); AccelStepper/FastAccelStepper (blocking-free but pin restrictions on AVR; V1 step pins don't fit).
 
-## D4 — Translation axes use hybrid chopper mode
-**Decision:** Translation drivers start in hybrid mode: StealthChop below 5 mm/s, SpreadCycle above (TMC2209 TPWMTHRS). Rotation stays in StealthChop. Settings in `motion_config.h`.
-**Why:** Measured 2026-10-28 on T1: in StealthChop the translation motor slips at 10, 15 and 20 mm/s (position lost, measured against the home switch). In SpreadCycle 10, 15 and 20 mm/s run without loss. StealthChop has less torque at speed; the lead-screw nut plus tube friction needs it. Hybrid keeps slow moves quiet.
-**Alternatives:** SpreadCycle always (louder at low speed); higher current (already 1.9 A of 2 A).
+## D4 — Translation axes use SpreadCycle
+**Decision:** Translation drivers run in SpreadCycle at all speeds. Rotation stays in StealthChop (quiet). Settings in `motion_config.h` (`TRA_CHOPPER`, `ROT_CHOPPER`).
+**Why:** Measured 2026-10-28. StealthChop on translation loses steps at 10, 15 and 20 mm/s (T1) and also at 5 mm/s (T3, about 5 mm lost over one cycle). Hybrid mode with a 5 mm/s switch-over therefore still slipped on slow moves. In SpreadCycle, T3 repeatability against its home switch: reference -54.65 mm; after fast (20 mm/s) cycles -54.67, -54.67; slow (3 mm/s) -54.57; i.e. within 0.1 mm, no steps lost. StealthChop has less torque under load; the lead-screw nut plus tube friction needs SpreadCycle.
+**Cost:** Translation motors are slightly more audible at low speed.
+**Alternatives:** Hybrid with a lower switch-over (not tested; StealthChop already slipped at 5 mm/s), higher current (already 1.9 A of the 2 A rating).
+
+## D5 — Hardware watchdog in interrupt-then-reset mode
+**Decision:** The ATmega2560 watchdog runs with a 1 s timeout in interrupt + reset mode. The main loop feeds it every pass. On the first timeout the watchdog interrupt switches off the step interrupt (no more step pulses) and marks the cause in RAM that survives a reset; one second later the board resets and reports "reset_cause=watchdog".
+**Why:** A frozen program must never leave motors moving. Stopping the pulses in the interrupt works even if the board then fails to restart (older Mega bootloaders can hang after a watchdog reset).
+**Alternatives:** Plain reset mode (no chance to stop pulses first; cause not reportable on bootloaders that clear MCUSR); no watchdog (V1).
 

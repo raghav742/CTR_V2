@@ -122,9 +122,11 @@ void enable(uint8_t i, bool on) {
 }
 
 #ifdef SIM_FAKE_DRIVERS
+bool alive(uint8_t)           { return true; }
 bool overTemp(uint8_t)        { return false; }
 bool overTempWarning(uint8_t) { return false; }
 #else
+bool alive(uint8_t i)           { return isPresent[i] && tmc[i].test_connection() == 0; }
 bool overTemp(uint8_t i)        { return isPresent[i] && tmc[i].ot(); }
 bool overTempWarning(uint8_t i) { return isPresent[i] && tmc[i].otpw(); }
 #endif

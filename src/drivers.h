@@ -20,6 +20,7 @@ void     setCurrent(uint8_t axis, uint16_t mA);
 void     enable(uint8_t axis, bool on);   // EN pin (LOW = enabled)
 bool     enabled(uint8_t axis);
 void     report();                // print one line per driver (console)
+bool     alive(uint8_t axis);           // driver still answers on UART
 bool     overTemp(uint8_t axis);        // over-temperature shutdown flag
 bool     overTempWarning(uint8_t axis); // pre-warning flag
 }  // namespace drivers

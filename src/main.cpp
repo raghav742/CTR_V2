@@ -14,9 +14,12 @@
 #include "drivers.h"
 #include "steppers.h"
 #include "motion.h"
+#include "system_state.h"
+#include "safety.h"
 
-// Handle input events once per pass. An encoder press always stops
-// motion (temporary until the state machine in step 1.4).
+// Handle input events once per pass.
+//   encoder press during motion -> stop (no fault)
+//   encoder long press (1 s) in FAULT -> acknowledge
 // With "watch on", events are also printed (test aid).
 static void handleEvents() {
   const bool w = console::watching();
@@ -24,10 +27,13 @@ static void handleEvents() {
   if (w && d) { Serial.print(F("EV enc ")); Serial.println(d); }
   if (encoder::takePress()) {
     if (w) Serial.println(F("EV btn press"));
-    if (motion::anyBusy()) motion::stopAll(F("encoder button"));
+    safety::userStop(F("encoder button"), encoder::pressEdgeUs());
   }
   if (encoder::takeRelease()   && w) Serial.println(F("EV btn release"));
-  if (encoder::takeLongPress() && w) Serial.println(F("EV btn long"));
+  if (encoder::takeLongPress()) {
+    if (w) Serial.println(F("EV btn long"));
+    if (sys::get() == sys::State::Fault) sys::acknowledge();
+  }
   for (uint8_t i = 0; i < hw::NUM_SWITCHES; i++) {
     if (limit_switches::changed(i) && w) {
       Serial.print(F("EV switch ")); Serial.print(hw::SWITCHES[i].name);
@@ -37,8 +43,10 @@ static void handleEvents() {
 }
 
 void setup() {
+  safety::begin();            // first: reset cause, watchdog off
   Serial.begin(115200);
   status_led::begin();
+  sys::begin();
   encoder::begin();
   limit_switches::begin();
   console::begin();
@@ -46,19 +54,21 @@ void setup() {
   steppers::begin();
   motion::begin();
 
-  status_led::set(status_led::Color::Green);   // idle
   Serial.print(F("CTR V2 firmware ")); Serial.print(FW_VERSION);
   Serial.print(F(" | profile: ")); Serial.println(hw::PROFILE_NAME);
   drivers::report();
   Serial.println(F("Type 'help' for commands."));
+  safety::armWatchdog();      // last: from here the loop must keep running
 }
 
 void loop() {
   loop_stats::update();
+  safety::update();
   encoder::update();
   limit_switches::update();
   status_led::update();
   motion::update();
+  sys::update();
   console::update();
   handleEvents();
 }

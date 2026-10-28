@@ -14,6 +14,7 @@ namespace {
   uint32_t downSince  = 0;
   bool     longFired  = false;
   bool     evPress = false, evRelease = false, evLong = false;
+  uint32_t rawEdgeUs = 0, pressUs = 0;
 
   bool readPressed() {
     bool level = digitalRead(hw::PIN_ENC_SW) == HIGH;
@@ -45,10 +46,10 @@ void update() {
 
   // --- button: accept a new state only after DEBOUNCE_MS without change ---
   bool raw = readPressed();
-  if (raw != rawLast) { rawLast = raw; rawSince = now; }
+  if (raw != rawLast) { rawLast = raw; rawSince = now; rawEdgeUs = micros(); }
   if (raw != stable && (now - rawSince) >= DEBOUNCE_MS) {
     stable = raw;
-    if (stable) { evPress = true; downSince = now; longFired = false; }
+    if (stable) { evPress = true; downSince = now; longFired = false; pressUs = rawEdgeUs; }
     else        { evRelease = true; }
   }
   if (stable && !longFired && (now - downSince) >= LONG_PRESS_MS) {
@@ -63,4 +64,5 @@ bool    takeRelease()   { bool e = evRelease; evRelease = false; return e; }
 bool    takeLongPress() { bool e = evLong;    evLong = false;    return e; }
 bool    isDown()        { return stable; }
 long    position()      { return total; }
+uint32_t pressEdgeUs()  { return pressUs; }
 }  // namespace encoder

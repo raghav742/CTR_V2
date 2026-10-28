@@ -17,6 +17,7 @@ bool    takeRelease();        // true once per release
 bool    takeLongPress();      // true once when held >= LONG_PRESS_MS
 bool    isDown();             // current debounced state
 long    position();           // total count since startup (for diagnostics)
+uint32_t pressEdgeUs();       // micros() when the last press first showed (reaction time)
 
 constexpr uint16_t DEBOUNCE_MS   = 20;
 constexpr uint16_t LONG_PRESS_MS = 1000;
