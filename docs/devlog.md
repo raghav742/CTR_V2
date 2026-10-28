@@ -18,4 +18,10 @@
 **Findings:**
 - Encoder button is active HIGH and only works while pin 49 is HIGH. Pin 49 (PCB "ENC_R") actually feeds the encoder "+" (LED supply and button); the "+" and red wires are swapped. Red LED unavailable on V1. Profile updated (decision D2).
 - With the internal pull-up enabled, the released button idles near 1 V (encoder pull-down vs. internal pull-up): likely cause of the "EMI on pin 44" in V1. Pull-up now disabled.
-- At rest, only T3-home reads HIGH although all carriages are at home: to check whether T1/T2 switches are actually pressed.
+- At rest, only T3-home reads HIGH: T1 and T2 carriages rest just short of their switches (checked). Switch wiring and polarity correct.
+
+## 2026-10-28 — Step 1.1: Non-blocking main loop and module structure
+**What:** Modules `encoder`, `status_led`, `limit_switches`, `console`, `loop_stats`, each with `begin()` and `update()`; `main.cpp` only calls them. Serial console reads character by character (commands: help, status, inputs, watch, led). Firmware version in `include/version.h`.
+**Why:** Nothing may wait, so inputs, safety and display keep running while motors move (Casper's code blocked everything during motion).
+**Test:** `status` shows loops/s and the slowest loop pass; `watch on` prints encoder and switch events; `led` changes colour without stopping anything.
+**Result on robot:** All results as expected. Encoder, limit switches everything prints changes.
