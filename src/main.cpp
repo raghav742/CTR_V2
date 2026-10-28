@@ -11,20 +11,25 @@
 #include "limit_switches.h"
 #include "status_led.h"
 #include "console.h"
+#include "drivers.h"
+#include "steppers.h"
+#include "motion.h"
 
-// Print input events while "watch on" is active (test aid)
-static void reportEvents() {
-  if (!console::watching()) { encoder::takeDelta(); encoder::takePress();
-                              encoder::takeRelease(); encoder::takeLongPress();
-                              for (uint8_t i = 0; i < hw::NUM_SWITCHES; i++) limit_switches::changed(i);
-                              return; }
+// Handle input events once per pass. An encoder press always stops
+// motion (temporary until the state machine in step 1.4).
+// With "watch on", events are also printed (test aid).
+static void handleEvents() {
+  const bool w = console::watching();
   int16_t d = encoder::takeDelta();
-  if (d)                         { Serial.print(F("EV enc ")); Serial.println(d); }
-  if (encoder::takePress())      Serial.println(F("EV btn press"));
-  if (encoder::takeRelease())    Serial.println(F("EV btn release"));
-  if (encoder::takeLongPress())  Serial.println(F("EV btn long"));
+  if (w && d) { Serial.print(F("EV enc ")); Serial.println(d); }
+  if (encoder::takePress()) {
+    if (w) Serial.println(F("EV btn press"));
+    if (motion::anyBusy()) motion::stopAll(F("encoder button"));
+  }
+  if (encoder::takeRelease()   && w) Serial.println(F("EV btn release"));
+  if (encoder::takeLongPress() && w) Serial.println(F("EV btn long"));
   for (uint8_t i = 0; i < hw::NUM_SWITCHES; i++) {
-    if (limit_switches::changed(i)) {
+    if (limit_switches::changed(i) && w) {
       Serial.print(F("EV switch ")); Serial.print(hw::SWITCHES[i].name);
       Serial.println(limit_switches::pressed(i) ? F(" pressed") : F(" released"));
     }
@@ -37,10 +42,14 @@ void setup() {
   encoder::begin();
   limit_switches::begin();
   console::begin();
+  drivers::begin();
+  steppers::begin();
+  motion::begin();
 
   status_led::set(status_led::Color::Green);   // idle
   Serial.print(F("CTR V2 firmware ")); Serial.print(FW_VERSION);
   Serial.print(F(" | profile: ")); Serial.println(hw::PROFILE_NAME);
+  drivers::report();
   Serial.println(F("Type 'help' for commands."));
 }
 
@@ -49,6 +58,7 @@ void loop() {
   encoder::update();
   limit_switches::update();
   status_led::update();
+  motion::update();
   console::update();
-  reportEvents();
+  handleEvents();
 }

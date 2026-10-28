@@ -5,6 +5,9 @@
 #include "encoder.h"
 #include "limit_switches.h"
 #include "status_led.h"
+#include "drivers.h"
+#include "steppers.h"
+#include "motion.h"
 
 namespace console {
 namespace {
@@ -22,6 +25,90 @@ namespace {
     Serial.println(F("  inputs            limit switches and encoder state"));
     Serial.println(F("  watch on|off      print input events live"));
     Serial.println(F("  led g|b|c|r|off [slow|fast]   set status LED"));
+    Serial.println(F("  drivers           driver detection, current, microsteps"));
+    Serial.println(F("  move <1-6> <amount> [speed]   mm & mm/s (translation) or deg & rpm (rotation)"));
+    Serial.println(F("  stop              stop all motors"));
+    Serial.println(F("  pos               positions of all axes"));
+    Serial.println(F("  en <1-6|all> / dis <1-6|all>  enable / disable motor drivers"));
+    Serial.println(F("  isr reset         reset the interrupt timing statistic"));
+    Serial.println(F("  chop <1-6> stealth|spread|hybrid [mm/s or rpm]   driver chopper mode"));
+    Serial.println(F("  ms <1-6> <2|4|8|16|32>   microstepping (position is kept)"));
+    Serial.println(F("  cur <1-6> <mA>    motor current (RMS)"));
+  }
+
+  // Parse "1".."6" -> 0..5, or -1
+  int8_t parseAxis(const char* a) {
+    if (!a) return -1;
+    int n = atoi(a);
+    return (n >= 1 && n <= (int)hw::NUM_AXES) ? n - 1 : -1;
+  }
+
+  void cmdMove(const char* a, const char* amt, const char* spd) {
+    int8_t i = parseAxis(a);
+    if (i < 0 || !amt) { Serial.println(F("ERR usage: move <1-6> <amount> [speed]")); return; }
+    motion::moveRelative(i, atof(amt), spd ? atof(spd) : 0);
+  }
+
+  void cmdPos() {
+    Serial.print(F("OK"));
+    for (uint8_t i = 0; i < hw::NUM_AXES; i++) {
+      Serial.print(' '); Serial.print(hw::AXES[i].name); Serial.print('=');
+      Serial.print(motion::position(i), 2);
+      if (motion::busy(i)) Serial.print('*');
+    }
+    Serial.println();
+  }
+
+  void cmdEnable(const char* a, bool on) {
+    if (a && !strcmp(a, "all")) {
+      if (!on) motion::stopAll(F("drivers disabled"));
+      for (uint8_t i = 0; i < hw::NUM_AXES; i++) drivers::enable(i, on);
+    } else {
+      int8_t i = parseAxis(a);
+      if (i < 0) { Serial.println(F("ERR usage: en|dis <1-6|all>")); return; }
+      if (!on && motion::busy(i)) motion::stopAll(F("driver disabled"));
+      drivers::enable(i, on);
+    }
+    Serial.println(on ? F("OK enabled") : F("OK disabled"));
+  }
+
+  void cmdChop(const char* a, const char* m, const char* thr) {
+    int8_t i = parseAxis(a);
+    if (i < 0 || !m) { Serial.println(F("ERR usage: chop <1-6> stealth|spread|hybrid [speed]")); return; }
+    drivers::Chopper c;
+    if      (!strcmp(m, "stealth")) c = drivers::Chopper::Stealth;
+    else if (!strcmp(m, "spread"))  c = drivers::Chopper::Spread;
+    else if (!strcmp(m, "hybrid"))  c = drivers::Chopper::Hybrid;
+    else { Serial.println(F("ERR mode: stealth|spread|hybrid")); return; }
+    float sps = 0;
+    if (c == drivers::Chopper::Hybrid) {
+      float v = thr ? atof(thr) : 5.0f;   // default switch-over: 5 mm/s or 5 rpm
+      bool tra = hw::AXES[i].type == AxisType::Translation;
+      sps = tra ? v * motion::stepsPerUnit(i) : v * 6.0f * motion::stepsPerUnit(i);
+    }
+    drivers::setChopper(i, c, sps);
+    Serial.println(F("OK chopper set"));
+  }
+
+  void cmdMs(const char* a, const char* v) {
+    int8_t i = parseAxis(a);
+    int ms = v ? atoi(v) : 0;
+    if (i < 0 || !(ms == 2 || ms == 4 || ms == 8 || ms == 16 || ms == 32)) {
+      Serial.println(F("ERR usage: ms <1-6> <2|4|8|16|32>")); return; }
+    if (motion::busy(i)) { Serial.println(F("ERR axis busy")); return; }
+    uint16_t old = drivers::microsteps(i);
+    int32_t pos = steppers::position(i);
+    drivers::setMicrosteps(i, ms);
+    steppers::setPosition(i, (int32_t)((int64_t)pos * ms / old));   // same physical position
+    Serial.print(F("OK ms=")); Serial.println(ms);
+  }
+
+  void cmdCur(const char* a, const char* v) {
+    int8_t i = parseAxis(a);
+    int mA = v ? atoi(v) : 0;
+    if (i < 0 || mA < 100 || mA > 2000) { Serial.println(F("ERR usage: cur <1-6> <100..2000>")); return; }
+    drivers::setCurrent(i, mA);
+    Serial.print(F("OK current=")); Serial.print(mA); Serial.println(F("mA"));
   }
 
   void cmdStatus() {
@@ -29,6 +116,7 @@ namespace {
     Serial.print(F(" profile=\""));  Serial.print(hw::PROFILE_NAME);
     Serial.print(F("\" loops/s="));  Serial.print(loop_stats::loopsPerSecond());
     Serial.print(F(" maxloop_us=")); Serial.print(loop_stats::maxLoopUs());
+    Serial.print(F(" isr_max_us=")); Serial.print(steppers::isrMaxUs(), 1);
     Serial.print(F(" uptime_s="));   Serial.println(millis() / 1000);
   }
 
@@ -80,6 +168,16 @@ namespace {
     else if (!strcmp(argv[0], "inputs")) cmdInputs();
     else if (!strcmp(argv[0], "watch"))  cmdWatch(argv[1]);
     else if (!strcmp(argv[0], "led"))    cmdLed(argv[1], argv[2]);
+    else if (!strcmp(argv[0], "drivers")) drivers::report();
+    else if (!strcmp(argv[0], "move"))   cmdMove(argv[1], argv[2], argv[3]);
+    else if (!strcmp(argv[0], "stop"))   { motion::stopAll(F("command")); Serial.println(F("OK stop")); }
+    else if (!strcmp(argv[0], "pos"))    cmdPos();
+    else if (!strcmp(argv[0], "en"))     cmdEnable(argv[1], true);
+    else if (!strcmp(argv[0], "dis"))    cmdEnable(argv[1], false);
+    else if (!strcmp(argv[0], "chop"))   cmdChop(argv[1], argv[2], argv[3]);
+    else if (!strcmp(argv[0], "ms"))     cmdMs(argv[1], argv[2]);
+    else if (!strcmp(argv[0], "cur"))    cmdCur(argv[1], argv[2]);
+    else if (!strcmp(argv[0], "isr"))    { steppers::resetIsrStats(); Serial.println(F("OK isr stats reset")); }
     else { Serial.print(F("ERR unknown command: ")); Serial.println(argv[0]); }
   }
 }

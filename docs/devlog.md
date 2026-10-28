@@ -25,3 +25,15 @@
 **Why:** Nothing may wait, so inputs, safety and display keep running while motors move (Casper's code blocked everything during motion).
 **Test:** `status` shows loops/s and the slowest loop pass; `watch on` prints encoder and switch events; `led` changes colour without stopping anything.
 **Result on robot:** All results as expected. Encoder, limit switches everything prints changes.
+
+## 2026-10-28 — Step 1.2: Timer-interrupt step generation
+**What:** `drivers` (TMC2209 setup over UART, Casper's settings), `steppers` (Timer1 interrupt at 20 kHz drives all six STEP pins), `motion` (mm/degrees, acceleration ramps, move commands). Microstepping 8 for translation, 16 for rotation (driver interpolates to 256). New commands: drivers, move, stop, pos, en, dis. Temporary safety net: a switch becoming pressed during motion, an encoder press or `stop` halts all axes.
+**Why:** Step pulses from an interrupt keep running while the main loop handles inputs, safety and display (decision D3).
+**Simulation (simavr, all 6 axes at full speed):** first version used 85 % CPU in the interrupt; optimised (unrolled, 16-bit accumulators) to 45 %. Loop still ~3,900 passes/s under that worst case. All moves end at the exact target.
+**Test on robot (2026-10-28):**
+- All 6 drivers detected and configured. Rotation axes (StealthChop): correct angles at 30 and 60 rpm, smooth, all three together OK; encoder press stops instantly.
+- Translation in StealthChop **slips** at 10, 15, 20 mm/s and also at 5 mm/s (counts drift; T2 lost about 16 mm, T3 about 5 mm). Diagnosed with runtime commands `chop`, `ms`, `cur` (v1.2.1): SpreadCycle fixes it, microstepping was not the cause. Translation now SpreadCycle by default (decision D4, v1.2.3).
+- Repeatability T3 in SpreadCycle against home switch: reference -54.65 mm; after 20 mm/s cycles -54.67 / -54.67; return at 20 mm/s -54.82 (= ~0.17 mm stopping distance, about 8 ms reaction); slow 3 mm/s -54.57. No steps lost.
+- Load with three translation axes at 20 mm/s: 9,016 loops/s, longest interrupt 29.5 us (tick = 50 us).
+- Added temporary 50 mm cap per translation move until homing exists (a 1200 mm typo was accepted before).
+**Open:** occasional slow loop pass (~4 ms) while printing to USB, to address with a larger serial buffer.

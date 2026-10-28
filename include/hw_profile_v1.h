@@ -45,6 +45,11 @@ constexpr float    TRAVEL_MM         = 200.0f;  // usable translation stroke
 constexpr float    R_SENSE           = 0.11f;   // TMC2209 breakout sense resistor (ohm)
 constexpr uint32_t TMC_BAUD          = 115200;  // UART to the drivers
 
+// Microstepping per axis type. Driver interpolates to 256 internally (smooth).
+// TRA 8: 20 mm/s = 16,000 steps/s, fits under the 20 kHz step timer.
+constexpr uint16_t MICROSTEPS_TRA    = 8;
+constexpr uint16_t MICROSTEPS_ROT    = 16;
+
 // --- Interface ----------------------------------------------
 constexpr uint8_t PIN_ENC_A    = 46;   // encoder CLK
 constexpr uint8_t PIN_ENC_B    = 45;   // encoder DT
