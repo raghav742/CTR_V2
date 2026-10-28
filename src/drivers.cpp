@@ -1,4 +1,5 @@
 #include "drivers.h"
+#include "serial_io.h"
 #include <TMCStepper.h>
 #include "hw_profile.h"
 #include "motion_config.h"
@@ -133,20 +134,20 @@ bool overTempWarning(uint8_t i) { return isPresent[i] && tmc[i].otpw(); }
 
 void report() {
 #ifdef SIM_FAKE_DRIVERS
-  Serial.println(F("OK drv simulated")); return;
+  Out.println(F("OK drv simulated")); return;
 #endif
   for (uint8_t i = 0; i < hw::NUM_AXES; i++) {
-    Serial.print(F("OK drv ")); Serial.print(i + 1);
-    Serial.print(' ');         Serial.print(hw::AXES[i].name);
-    if (!isPresent[i]) { Serial.println(F(" not found")); continue; }
-    Serial.print(F(" I="));    Serial.print(tmc[i].rms_current());
-    Serial.print(F("mA ms=")); Serial.print(tmc[i].microsteps());
-    Serial.print(F(" en="));   Serial.print(isEnabled[i] ? 1 : 0);
-    Serial.print(F(" chop=")); Serial.print(chopName(chopCur[i]));
-    if (chopCur[i] == Chopper::Hybrid) { Serial.print('@'); Serial.print(hybridCur[i], 0); Serial.print(F("sps")); }
-    if (tmc[i].ot())        Serial.print(F(" OVERTEMP"));
-    else if (tmc[i].otpw()) Serial.print(F(" warm"));
-    Serial.println();
+    Out.print(F("OK drv ")); Out.print(i + 1);
+    Out.print(' ');         Out.print(hw::AXES[i].name);
+    if (!isPresent[i]) { Out.println(F(" not found")); continue; }
+    Out.print(F(" I="));    Out.print(tmc[i].rms_current());
+    Out.print(F("mA ms=")); Out.print(tmc[i].microsteps());
+    Out.print(F(" en="));   Out.print(isEnabled[i] ? 1 : 0);
+    Out.print(F(" chop=")); Out.print(chopName(chopCur[i]));
+    if (chopCur[i] == Chopper::Hybrid) { Out.print('@'); Out.print(hybridCur[i], 0); Out.print(F("sps")); }
+    if (tmc[i].ot())        Out.print(F(" OVERTEMP"));
+    else if (tmc[i].otpw()) Out.print(F(" warm"));
+    Out.println();
   }
 }
 }  // namespace drivers

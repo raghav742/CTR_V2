@@ -76,6 +76,11 @@ void setRate(uint8_t i, float sps) {
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { sInc[i] = v; }
 }
 
+void setIncrement(uint8_t i, uint16_t inc) {
+  if (i >= N) return;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { sInc[i] = inc; }
+}
+
 void stop(uint8_t i) {
   if (i >= N) return;
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { sActive &= ~_BV(i); sInc[i] = 0; sRem[i] = 0; }

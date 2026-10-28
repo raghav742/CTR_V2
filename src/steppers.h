@@ -9,11 +9,16 @@
 //  Units here: microsteps.
 // ============================================================
 #include <Arduino.h>
+#include "motion_config.h"
 
 namespace steppers {
 void    begin();                                 // cache pin ports, start Timer1
 void    start(uint8_t axis, int32_t target);     // set direction, run until target
 void    setRate(uint8_t axis, float stepsPerSec);
+// Faster variant for the ramp loop: the raw per-tick increment
+// (steps/s x INC_PER_SPS). Saves float work every millisecond.
+constexpr float INC_PER_SPS = 65536.0f / motion_cfg::STEP_TICK_HZ;
+void    setIncrement(uint8_t axis, uint16_t inc);
 void    stop(uint8_t axis);                      // immediate stop
 void    stopAll();
 bool    running(uint8_t axis);

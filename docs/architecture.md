@@ -40,10 +40,10 @@ CTRV2.0/
 │   ├─ hw_profile_v1.h   V1 robot: pins, currents, switches, mechanics, interface
 │   ├─ hw_profile_v2.h   V2 robot (filled in at Phase 5)
 │   ├─ motion_config.h   tuning: speeds, accelerations, chopper modes
-│   └─ version.h         firmware version <phase>.<step>.<patch>
+│   └─ version.h         firmware version, protocol version, console baud rate
 ├─ src/                the program (one module = one .h + one .cpp)
 ├─ reference_v1/       Casper's code, read-only, not compiled
-└─ docs/               this file, devlog, decisions, pin map
+└─ docs/               this file, devlog, decisions, pin map, protocol
 ```
 
 **Hardware profile (decision D1).** Program code never contains a pin number. It always
@@ -320,7 +320,72 @@ loop():   safety::update()       early in every pass: feed watchdog, check switc
 
 ---
 
-## 8. Development and test method
+## 8. Serial protocol (Step 1.6, decision D6)
+
+The console from Step 1.1 is now a protocol: the same text lines work for a person in the
+Serial Monitor and for the phase 4 laptop program. Full reference: `docs/protocol.md`.
+
+### Line types
+Every line from the robot starts with a word that says what it is: `OK` / `ERR` (reply to a
+command), `EV` (something happened), `ST` (status stream). A program only has to look at the
+first word. Data is always `key=value`, so new fields can be added later without breaking
+an older program.
+
+### Request ids
+A laptop sends commands while events and stream lines keep arriving, so it needs to know
+which line answers which command. Writing `#12 pos` makes every line printed during that
+command start with `#12 `. Implementation: `console::execute()` strips the `#12`, calls
+`Out.beginReply(12)`, runs the command, then `Out.endReply()`. Events caused by the command
+(e.g. `EV stopped` after `#9 stop`) carry the id too, which is correct: the command caused them.
+
+### `serial_io` — the output object `Out`
+All modules print through `Out` instead of `Serial` (same `print`/`println` calls). `Out`
+is a small class derived from Arduino's `Print`; only its `write(c)` is new: at the start of
+a line it inserts the `#id ` tag when a request id is active, then passes the character to
+`Serial`. Having one output point also made two speed fixes possible in one place:
+- **Fast decimals.** Arduino prints a float digit by digit with float maths (~0.5 ms per
+  number). `Out.print(x, 2)` scales once to an integer (12.345 -> 1235), splits whole part
+  and fraction with 16-bit integer maths when the value fits, and sends the text in one go.
+- **`room()`** returns free space in the send buffer, used by the stream.
+
+### Why printing used to stall the loop
+`Serial.print` only copies characters into a send buffer; an interrupt sends them over USB.
+At 115200 baud one character takes 87 us, and the buffer held 64 characters. A 130-character
+reply therefore filled the buffer and `print` waited ~5.7 ms for space; the whole loop
+(safety checks included) waited with it. Fixes:
+1. 250000 baud: 40 us per character, and exact on a 16 MHz clock (115200 is 2 % off).
+2. Send buffer 256 bytes (`-DSERIAL_TX_BUFFER_SIZE=256` in `platformio.ini`; costs 768 bytes
+   of RAM because the core uses the same size for Serial1-3).
+3. The stream checks `Out.room()` first and **skips** a line if it does not fit (`st_skipped`).
+Only very long human listings (`help`) can still wait.
+
+**Robot result:** printing no longer shows up in `maxloop_us`. The ~9 ms that remained was
+traced to the driver health check from Step 1.5: TMCStepper waits ~4.5 ms inside every UART
+read (fixed 2 ms delays plus the reply), and one check reads twice. Decision D7 runs the
+check once per second instead of five times.
+
+**Terminal keys (v1.6.1):** the PlatformIO monitor sends arrow keys and Delete as escape
+sequences (`ESC [ C`, `ESC [ 3 ~`). The console now skips these and treats Backspace
+(0x08 / 0x7F) as "delete last character".
+
+Remaining cost is CPU time, not waiting: the Arduino serial driver costs ~10 us per
+character (including its send interrupt), so an `ST` line costs ~1.5 ms; at 10 lines/s that
+is 1.5 % of the CPU.
+
+### Status stream
+`stream 100` prints `ST t=... state=... busy=110000 pos=...` every 100 ms from
+`console::updateStream()` (called at the end of `console::update()`). `st` gives the same
+fields once, as an `OK` reply. `info` describes the axes (names and units) and switches, so
+the laptop program builds its display from the robot itself (works for V1 and V2).
+
+### Ramp update optimisation
+Profiling in the simulator showed `motion::update()` taking ~1 ms of wall time per run when
+all six axes ran at maximum speed (the step interrupt then uses most of the CPU, so all main
+loop work runs slower). Per axis it did speed x distance, x scale, float-to-integer, every
+millisecond. Now `k[i] = distance x scale` is computed once when the move starts and
+`steppers::setIncrement()` takes the integer directly: one multiply per axis. 1.0 -> 0.74 ms.
+
+## 9. Development and test method
 
 - Each step: design explained -> code -> compiled -> simulator (where possible) -> robot test
   with pass criteria -> devlog entry + git commit.
@@ -332,20 +397,26 @@ loop():   safety::update()       early in every pass: feed watchdog, check switc
 - **Runtime diagnostic commands** (`chop`, `ms`, `cur`) allow testing driver settings
   without reflashing; this is how the StealthChop slip was diagnosed in minutes.
 
-## 9. Console commands (firmware 1.5.0)
+## 10. Console commands (firmware 1.6.0)
 ```
 help  status  state  ack  safety  wdtest  inputs  watch on|off  led g|b|c|r|off [slow|fast]
 drivers  move <1-6> <amount> [speed]  mv <axis>=<amount> ... [t=<s>] [v=<%>]
 stop  pos  en <1-6|all>  dis <1-6|all>  isr reset
+info  ping  st  stream <ms>|off          (protocol, Step 1.6; prefix any command with #<id>)
 chop <1-6> stealth|spread|hybrid [speed]  ms <1-6> <2..32>  cur <1-6> <mA>
 ```
 Axes: 1 T1-Rot, 2 T1-Tra, 3 T2-Rot, 4 T2-Tra, 5 T3-Rot, 6 T3-Tra.
 Units: translation mm and mm/s; rotation degrees and rpm.
 Collision rule until Phase 2: moving forward, T2 approaches T1 and T3 approaches T2.
 
-## 10. Open items
-- Step 1.6: formal serial protocol for the laptop.
-- Occasional slow loop pass (~4–7 ms) while printing to USB: larger serial buffer planned.
+## 11. Open items
+- Longest loop pass on the robot is ~9 ms, caused by the driver health check (two blocking
+  TMCStepper UART reads, ~4.5 ms each), not by printing. Accepted for the prototype and made
+  rare: once per second (decision D7). A non-blocking UART reader would remove it.
+- Building a long line still costs CPU (~10 us per character): with all six axes at maximum
+  speed the simulator shows single passes of 3–8 ms when a move starts or ends.
+- With all six axes at maximum speed the step interrupt uses most of the CPU (simulator:
+  ~900 loop passes/s). Fine for now; revisit if demos need all axes at full speed together.
 - Rotation axes have no zero reference yet (Step 2.4).
 - T1 rests about 19 mm from its far-end switch at power-on positions; real travel per
   carriage to be measured during homing (Phase 2).

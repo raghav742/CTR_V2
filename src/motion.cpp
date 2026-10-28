@@ -1,4 +1,5 @@
 #include "motion.h"
+#include "serial_io.h"
 #include "hw_profile.h"
 #include "motion_config.h"
 #include "steppers.h"
@@ -25,6 +26,8 @@ namespace {
     uint8_t  mask;        // bit i = axis i belongs to this group
     uint8_t  master;      // axis with the longest distance (in steps)
     float    d[N];        // distance per axis in microsteps (absolute)
+    float    k[N];        // d[i] x steppers::INC_PER_SPS (precomputed for update())
+    float    invDm;       // 1 / d[master]
     float    vp;          // current progress speed (1/s)
     float    vpMax;       // cruise progress speed
     float    vpMin;       // start/stop progress speed
@@ -55,14 +58,14 @@ namespace {
   }
 
   void printDone(Group& g, bool stopped) {
-    Serial.print(stopped ? F("EV stopped") : F("EV done"));
-    Serial.print(F(" t=")); Serial.print((millis() - g.startMs) / 1000.0f, 2); Serial.print('s');
+    Out.print(stopped ? F("EV stopped") : F("EV done"));
+    Out.print(F(" t=")); Out.print((millis() - g.startMs) / 1000.0f, 2); Out.print('s');
     for (uint8_t i = 0; i < N; i++) {
       if (!(g.mask & _BV(i))) continue;
-      Serial.print(' '); Serial.print(hw::AXES[i].name); Serial.print('=');
-      Serial.print(position(i), 2);
+      Out.print(' '); Out.print(hw::AXES[i].name); Out.print('=');
+      Out.print(position(i), 2);
     }
-    Serial.println();
+    Out.println();
   }
 
   void finishGroup(uint8_t k, bool stopped) {
@@ -75,7 +78,7 @@ namespace {
 
   // Validate one axis: busy here, everything else in the safety manager
   bool axisOk(uint8_t i, float amount) {
-    if (axisGroup[i] >= 0) { Serial.print(F("ERR ")); Serial.print(hw::AXES[i].name); Serial.println(F(" busy")); return false; }
+    if (axisGroup[i] >= 0) { Out.print(F("ERR ")); Out.print(hw::AXES[i].name); Out.println(F(" busy")); return false; }
     return safety::checkMove(i, amount);
   }
 }
@@ -110,18 +113,18 @@ bool anyBusy() {
 // ------------------------------------------------------------
 bool moveGroup(const float amount[], uint8_t mask, float speedPct, float duration, float singleSpeed) {
   if (!sys::motionAllowed()) {
-    Serial.print(F("ERR not allowed in state ")); Serial.print(sys::name(sys::get()));
-    if (sys::get() == sys::State::Fault) { Serial.print(F(": ")); Serial.print(sys::faultReason()); Serial.print(F(" (ack first)")); }
-    Serial.println();
+    Out.print(F("ERR not allowed in state ")); Out.print(sys::name(sys::get()));
+    if (sys::get() == sys::State::Fault) { Out.print(F(": ")); Out.print(sys::faultReason()); Out.print(F(" (ack first)")); }
+    Out.println();
     return false;
   }
-  if (!mask) { Serial.println(F("ERR no axes")); return false; }
+  if (!mask) { Out.println(F("ERR no axes")); return false; }
   for (uint8_t i = 0; i < N; i++)
     if ((mask & _BV(i)) && !axisOk(i, amount[i])) return false;
 
   int8_t k = -1;
   for (uint8_t j = 0; j < N; j++) if (!groups[j].active) { k = j; break; }
-  if (k < 0) { Serial.println(F("ERR no free move slot")); return false; }
+  if (k < 0) { Out.println(F("ERR no free move slot")); return false; }
   Group& g = groups[k];
 
   // Distances in steps; derive the shared progress limits
@@ -142,7 +145,7 @@ bool moveGroup(const float amount[], uint8_t mask, float speedPct, float duratio
     apLimit = fminf(apLimit, accSps(i) / g.d[i]);
     if (g.d[i] > dMax) { dMax = g.d[i]; g.master = i; }
   }
-  if (!g.mask) { Serial.println(F("OK nothing to move")); return true; }
+  if (!g.mask) { Out.println(F("OK nothing to move")); return true; }
 
   if (speedPct <= 0 || speedPct > 100) speedPct = 100;
   g.ap    = apLimit;
@@ -153,13 +156,15 @@ bool moveGroup(const float amount[], uint8_t mask, float speedPct, float duratio
     float disc = g.ap * g.ap * duration * duration - 4.0f * g.ap;
     float tMin = profileTime(vpLimit, g.ap);
     if (disc < 0 || duration < tMin) {
-      Serial.print(F("ERR too short, minimum t=")); Serial.print(tMin, 2); Serial.println('s');
+      Out.print(F("ERR too short, minimum t=")); Out.print(tMin, 2); Out.println('s');
       return false;
     }
     g.vpMax = (g.ap * duration - sqrtf(disc)) / 2.0f;
   }
 
   g.vpMin = fminf(vMinSps(g.master) / g.d[g.master], g.vpMax);
+  g.invDm = 1.0f / g.d[g.master];
+  for (uint8_t i = 0; i < N; i++) g.k[i] = g.d[i] * steppers::INC_PER_SPS;
   g.vp    = g.vpMin;
   g.startMs = millis();
   g.active  = true;
@@ -171,18 +176,18 @@ bool moveGroup(const float amount[], uint8_t mask, float speedPct, float duratio
     steppers::start(i, target[i]);
   }
 
-  Serial.print(F("OK mv"));
+  Out.print(F("OK mv"));
   for (uint8_t i = 0; i < N; i++) {
     if (!(g.mask & _BV(i))) continue;
-    Serial.print(' '); Serial.print(hw::AXES[i].name); Serial.print('=');
-    Serial.print(amount[i], 2); Serial.print(unit(i));
+    Out.print(' '); Out.print(hw::AXES[i].name); Out.print('=');
+    Out.print(amount[i], 2); Out.print(unit(i));
   }
-  Serial.print(F(" est_t=")); Serial.print(profileTime(g.vpMax, g.ap), 2); Serial.println('s');
+  Out.print(F(" est_t=")); Out.print(profileTime(g.vpMax, g.ap), 2); Out.println('s');
   return true;
 }
 
 bool moveRelative(uint8_t i, float amount, float speed) {
-  if (i >= N) { Serial.println(F("ERR axis 1..6")); return false; }
+  if (i >= N) { Out.println(F("ERR axis 1..6")); return false; }
   float a[N] = { 0 };
   a[i] = amount;
   if (speed <= 0) speed = isTra(i) ? motion_cfg::TRA_SPEED_DEFAULT : motion_cfg::ROT_SPEED_DEFAULT;
@@ -193,7 +198,7 @@ void stopAll(const __FlashStringHelper* reason) {
   bool any = anyBusy();
   steppers::stopAll();
   for (uint8_t k = 0; k < N; k++) finishGroup(k, true);
-  if (any) { Serial.print(F("EV stop ")); Serial.println(reason); }
+  if (any) { Out.print(F("EV stop ")); Out.println(reason); }
 }
 
 // ------------------------------------------------------------
@@ -214,7 +219,7 @@ void update() {
     if (!anyRunning) { finishGroup(k, false); continue; }
 
     // Remaining progress, measured on the longest axis
-    float remP = steppers::remaining(g.master) / g.d[g.master];
+    float remP = steppers::remaining(g.master) * g.invDm;
     float vUp   = g.vp + g.ap * dt;
     float vStop = sqrtf(2.0f * g.ap * remP);
     float v = vUp;
@@ -223,8 +228,12 @@ void update() {
     if (v < g.vpMin) v = g.vpMin;
     g.vp = v;
 
-    for (uint8_t i = 0; i < N; i++)
-      if ((g.mask & _BV(i)) && steppers::running(i)) steppers::setRate(i, v * g.d[i]);
+    // One multiply per axis (k = distance x increment scale, set at start)
+    for (uint8_t i = 0; i < N; i++) {
+      if (!(g.mask & _BV(i)) || !steppers::running(i)) continue;
+      float inc = v * g.k[i];
+      steppers::setIncrement(i, inc >= 65535.0f ? 65535 : (uint16_t)inc);
+    }
   }
 }
 }  // namespace motion

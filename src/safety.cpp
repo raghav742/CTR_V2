@@ -1,4 +1,5 @@
 #include "safety.h"
+#include "serial_io.h"
 #include <avr/wdt.h>
 #include "hw_profile.h"
 #include "motion_config.h"
@@ -36,7 +37,7 @@ namespace {
 
   void reportReaction(uint32_t edgeUs) {
     lastReactionUs = micros() - edgeUs;
-    Serial.print(F("EV reaction_ms=")); Serial.println(lastReactionUs / 1000.0f, 1);
+    Out.print(F("EV reaction_ms=")); Out.println(lastReactionUs / 1000.0f, 1);
   }
 }
 
@@ -63,28 +64,28 @@ void armWatchdog() {
   WDTCSR = _BV(WDIE) | _BV(WDE) | _BV(WDP2) | _BV(WDP1);   // 1 s
   sei();
   for (uint8_t s = 0; s < hw::NUM_SWITCHES; s++) swPrev[s] = limit_switches::pressed(s);
-  Serial.print(F("EV boot reset_cause=")); Serial.println(causeText());
+  Out.print(F("EV boot reset_cause=")); Out.println(causeText());
 }
 
 // ------------------------------------------------------------
 bool checkMove(uint8_t i, float amount) {
   const char* name = hw::AXES[i].name;
-  if (!drivers::present(i)) { Serial.print(F("ERR ")); Serial.print(name); Serial.println(F(" driver not found")); return false; }
-  if (!drivers::enabled(i)) { Serial.print(F("ERR ")); Serial.print(name); Serial.println(F(" disabled")); return false; }
+  if (!drivers::present(i)) { Out.print(F("ERR ")); Out.print(name); Out.println(F(" driver not found")); return false; }
+  if (!drivers::enabled(i)) { Out.print(F("ERR ")); Out.print(name); Out.println(F(" disabled")); return false; }
   if (!isTra(i)) return true;
 
   // Until homing exists, positions are only counted steps
   if (!sys::homed() && fabsf(amount) > motion_cfg::TRA_MAX_MOVE_UNHOMED) {
-    Serial.print(F("ERR translation moves limited to "));
-    Serial.print(motion_cfg::TRA_MAX_MOVE_UNHOMED, 0); Serial.println(F(" mm until homed"));
+    Out.print(F("ERR translation moves limited to "));
+    Out.print(motion_cfg::TRA_MAX_MOVE_UNHOMED, 0); Out.println(F(" mm until homed"));
     return false;
   }
   // No moving further into a switch that is already pressed
   int8_t home = limit_switches::findHome(i), far = limit_switches::findFarEnd(i);
   if (amount < 0 && home >= 0 && limit_switches::pressed(home)) {
-    Serial.print(F("ERR ")); Serial.print(name); Serial.println(F(" home switch pressed")); return false; }
+    Out.print(F("ERR ")); Out.print(name); Out.println(F(" home switch pressed")); return false; }
   if (amount > 0 && far >= 0 && limit_switches::pressed(far)) {
-    Serial.print(F("ERR ")); Serial.print(name); Serial.println(F(" far-end switch pressed")); return false; }
+    Out.print(F("ERR ")); Out.print(name); Out.println(F(" far-end switch pressed")); return false; }
   return true;
 }
 
@@ -116,9 +117,9 @@ void update() {
     swPrev[s] = p;
   }
 
-  // --- driver health: one driver every 200 ms (each UART read takes 1-2 ms) ---
+  // --- driver health: one driver every DRV_CHECK_MS (one check blocks ~9 ms, D7) ---
   uint32_t now = millis();
-  if (now - lastDrvCheck >= 200 && sys::get() != sys::State::Fault) {
+  if (now - lastDrvCheck >= motion_cfg::DRV_CHECK_MS && sys::get() != sys::State::Fault) {
     lastDrvCheck = now;
     uint8_t i = drvAxis;
     drvAxis = (drvAxis + 1) % hw::NUM_AXES;
@@ -136,19 +137,19 @@ void update() {
 }
 
 void report() {
-  Serial.print(F("OK reset_cause=")); Serial.print(causeText());
-  Serial.print(F(" last_reaction_ms=")); Serial.print(lastReactionUs / 1000.0f, 1);
-  Serial.print(F(" expected_switches="));
+  Out.print(F("OK reset_cause=")); Out.print(causeText());
+  Out.print(F(" last_reaction_ms=")); Out.print(lastReactionUs / 1000.0f, 1);
+  Out.print(F(" expected_switches="));
   bool any = false;
   for (uint8_t s = 0; s < hw::NUM_SWITCHES; s++)
-    if (swExpected[s]) { if (any) Serial.print(','); Serial.print(hw::SWITCHES[s].name); any = true; }
-  if (!any) Serial.print(F("none"));
-  Serial.println(F(" watchdog=1s"));
+    if (swExpected[s]) { if (any) Out.print(','); Out.print(hw::SWITCHES[s].name); any = true; }
+  if (!any) Out.print(F("none"));
+  Out.println(F(" watchdog=1s"));
 }
 
 void watchdogTest() {
-  if (motion::anyBusy()) { Serial.println(F("ERR stop motion first")); return; }
-  Serial.println(F("OK freezing now; watchdog should restart the board in ~2 s"));
+  if (motion::anyBusy()) { Out.println(F("ERR stop motion first")); return; }
+  Out.println(F("OK freezing now; watchdog should restart the board in ~2 s"));
   Serial.flush();
   for (;;) { }   // never feeds the watchdog
 }

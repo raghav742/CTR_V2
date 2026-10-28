@@ -16,6 +16,7 @@
 #include "motion.h"
 #include "system_state.h"
 #include "safety.h"
+#include "serial_io.h"
 
 // Handle input events once per pass.
 //   encoder press during motion -> stop (no fault)
@@ -24,27 +25,27 @@
 static void handleEvents() {
   const bool w = console::watching();
   int16_t d = encoder::takeDelta();
-  if (w && d) { Serial.print(F("EV enc ")); Serial.println(d); }
+  if (w && d) { Out.print(F("EV enc ")); Out.println(d); }
   if (encoder::takePress()) {
-    if (w) Serial.println(F("EV btn press"));
+    if (w) Out.println(F("EV btn press"));
     safety::userStop(F("encoder button"), encoder::pressEdgeUs());
   }
-  if (encoder::takeRelease()   && w) Serial.println(F("EV btn release"));
+  if (encoder::takeRelease()   && w) Out.println(F("EV btn release"));
   if (encoder::takeLongPress()) {
-    if (w) Serial.println(F("EV btn long"));
+    if (w) Out.println(F("EV btn long"));
     if (sys::get() == sys::State::Fault) sys::acknowledge();
   }
   for (uint8_t i = 0; i < hw::NUM_SWITCHES; i++) {
     if (limit_switches::changed(i) && w) {
-      Serial.print(F("EV switch ")); Serial.print(hw::SWITCHES[i].name);
-      Serial.println(limit_switches::pressed(i) ? F(" pressed") : F(" released"));
+      Out.print(F("EV switch ")); Out.print(hw::SWITCHES[i].name);
+      Out.println(limit_switches::pressed(i) ? F(" pressed") : F(" released"));
     }
   }
 }
 
 void setup() {
   safety::begin();            // first: reset cause, watchdog off
-  Serial.begin(115200);
+  Serial.begin(CONSOLE_BAUD);
   status_led::begin();
   sys::begin();
   encoder::begin();
@@ -54,10 +55,10 @@ void setup() {
   steppers::begin();
   motion::begin();
 
-  Serial.print(F("CTR V2 firmware ")); Serial.print(FW_VERSION);
-  Serial.print(F(" | profile: ")); Serial.println(hw::PROFILE_NAME);
+  Out.print(F("CTR V2 firmware ")); Out.print(FW_VERSION);
+  Out.print(F(" | profile: ")); Out.println(hw::PROFILE_NAME);
   drivers::report();
-  Serial.println(F("Type 'help' for commands."));
+  Out.println(F("Type 'help' for commands."));
   safety::armWatchdog();      // last: from here the loop must keep running
 }
 

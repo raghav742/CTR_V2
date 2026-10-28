@@ -1,10 +1,10 @@
 #pragma once
 // ============================================================
-//  Serial console (non-blocking)
+//  Serial console = protocol v1 (docs/protocol.md)
 //  Reads characters as they arrive and runs a command when a
-//  full line is in. Never waits. Becomes the laptop protocol
-//  in step 1.6.
-//  Replies start with "OK" or "ERR"; events start with "EV".
+//  full line is in. Never waits.
+//  Line types: replies "OK"/"ERR", events "EV", status "ST".
+//  "#<id> <command>" tags every reply line with "#<id> ".
 // ============================================================
 #include <Arduino.h>
 
@@ -12,4 +12,5 @@ namespace console {
 void begin();
 void update();          // call every loop pass
 bool watching();        // "watch on": print input events live
+void updateStream();    // ST line every <ms> if "stream" is on (called by update)
 }  // namespace console

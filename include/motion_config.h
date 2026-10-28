@@ -34,4 +34,11 @@ constexpr float TRA_MAX_MOVE_UNHOMED = 50.0f;   // mm
 
 // Ramp recalculation interval in the main loop
 constexpr uint16_t RAMP_UPDATE_US = 1000;
+
+// Driver health check (safety): one driver per interval, round-robin, so each
+// driver is checked every 6 x interval. One check = 2 UART reads = ~9 ms of
+// blocked loop (measured 2026-10-28, TMCStepper waits inside each read).
+// Decision D7: 1 s (was 200 ms) -> the 9 ms pause happens once a second.
+// The TMC2209 also shuts itself down on over-temperature (hardware).
+constexpr uint16_t DRV_CHECK_MS = 1000;
 }  // namespace motion_cfg

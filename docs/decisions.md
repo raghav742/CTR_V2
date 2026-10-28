@@ -25,3 +25,13 @@
 **Why:** A frozen program must never leave motors moving. Stopping the pulses in the interrupt works even if the board then fails to restart (older Mega bootloaders can hang after a watchdog reset).
 **Alternatives:** Plain reset mode (no chance to stop pulses first; cause not reportable on bootloaders that clear MCUSR); no watchdog (V1).
 
+## D6 — One text protocol for humans and programs
+**Decision:** Plain-text lines with fixed prefixes (`OK`, `ERR`, `EV`, `ST`), `key=value` fields, optional request ids (`#<n>`), 250000 baud, 256-byte send buffer. The status stream skips a line rather than wait. Versioned with `PROTO_VERSION`; documented in `docs/protocol.md`.
+**Why:** The same commands work in the Serial Monitor and from the laptop program, so everything the program does can be tried by hand. Ids let a program match replies while events and stream lines arrive in between. `info` makes the laptop program configure itself from the robot, so it works on V1 and V2 unchanged. Never waiting for USB keeps the safety loop fast.
+**Alternatives:** Binary protocol (smaller, but unreadable when debugging and gains little at 250000 baud); JSON (readable, but large lines and slow to build on an 8-bit CPU).
+
+## D7 — Driver health check once per second, blocking reads accepted
+**Decision:** The safety manager checks one TMC2209 per second (round-robin, each driver every 6 s) using the TMCStepper library's blocking reads. Setting `DRV_CHECK_MS` in `motion_config.h`.
+**Why:** Measured 2026-10-28: one check (alive + temperature) blocks the main loop for ~9 ms because TMCStepper waits inside each UART read. At the original 200 ms interval this happened 5 times a second. A 9 ms worst-case delay in noticing a limit switch is acceptable for the prototype (stop reaction measured 10.2 ms including it); checking less often makes it rare. The TMC2209 also protects itself (thermal shutdown in hardware).
+**Cost:** Over-temperature or a lost driver is reported up to 6 s later; the 9 ms pause still occurs once a second.
+**Alternatives:** Own non-blocking UART read (send request, collect reply over later loop passes; no pause at all, ~1 h work; revisit if switch reaction or display smoothness needs it); one read per check (halves the pause).

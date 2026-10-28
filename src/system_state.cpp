@@ -1,4 +1,5 @@
 #include "system_state.h"
+#include "serial_io.h"
 #include "hw_profile.h"
 #include "status_led.h"
 #include "motion.h"
@@ -45,10 +46,10 @@ namespace {
     State from = cur;
     cur = to;
     showLed(to);
-    Serial.print(F("EV state ")); Serial.print(name(from));
-    Serial.print(F(" -> "));      Serial.print(name(to));
-    if (why && *why) { Serial.print(F(" (")); Serial.print(why); Serial.print(')'); }
-    Serial.println();
+    Out.print(F("EV state ")); Out.print(name(from));
+    Out.print(F(" -> "));      Out.print(name(to));
+    if (why && *why) { Out.print(F(" (")); Out.print(why); Out.print(')'); }
+    Out.println();
   }
 }
 
@@ -78,12 +79,12 @@ bool request(State to) {
   if (to == cur) return true;
   if (to == State::Fault) { fault("requested"); return true; }
   if (!(ALLOWED[(uint8_t)cur] & B(to))) {
-    Serial.print(F("ERR not allowed: ")); Serial.print(name(cur));
-    Serial.print(F(" -> ")); Serial.println(name(to));
+    Out.print(F("ERR not allowed: ")); Out.print(name(cur));
+    Out.print(F(" -> ")); Out.println(name(to));
     return false;
   }
   if ((to == State::Ready) && !isHomed) {
-    Serial.println(F("ERR not homed")); return false;
+    Out.println(F("ERR not homed")); return false;
   }
   enter(to, nullptr);
   return true;
@@ -97,7 +98,7 @@ void fault(const char* why) {
 }
 
 bool acknowledge() {
-  if (cur != State::Fault) { Serial.println(F("ERR no fault active")); return false; }
+  if (cur != State::Fault) { Out.println(F("ERR no fault active")); return false; }
   reason[0] = '\0';
   enter(isHomed ? State::Ready : State::Idle, "acknowledged");
   return true;
@@ -121,9 +122,9 @@ void update() {
 }
 
 void report() {
-  Serial.print(F("OK state=")); Serial.print(name(cur));
-  Serial.print(F(" homed="));   Serial.print(isHomed ? 1 : 0);
-  if (cur == State::Fault) { Serial.print(F(" fault=\"")); Serial.print(reason); Serial.print('"'); }
-  Serial.println();
+  Out.print(F("OK state=")); Out.print(name(cur));
+  Out.print(F(" homed="));   Out.print(isHomed ? 1 : 0);
+  if (cur == State::Fault) { Out.print(F(" fault=\"")); Out.print(reason); Out.print('"'); }
+  Out.println();
 }
 }  // namespace sys
