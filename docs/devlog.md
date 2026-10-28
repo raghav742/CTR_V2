@@ -13,4 +13,9 @@
 ## 2026-10-27 — Step 0.3: Hardware profile
 **What:** `hw_types.h` (data types), `hw_profile_v1.h` (V1 values), `hw_profile_v2.h` (placeholder), `hw_profile.h` (selector). Two build environments, `v1` and `v2`, in `platformio.ini`. Test program prints the profile at startup.
 **Why:** Program code never contains pin numbers; moving to V2 means filling in one file (decision D1).
-**Test:** `v1` builds and prints the profile; `v2` stops with "V2 profile not defined yet". Result on robot: _to fill in_
+**Test:** `v1` builds and prints the profile; `v2` stops with "V2 profile not defined yet".
+**Result on robot (2026-10-28):** Profile printout correct. Encoder rotation and all limit switches report changes.
+**Findings:**
+- Encoder button is active HIGH and only works while pin 49 is HIGH. Pin 49 (PCB "ENC_R") actually feeds the encoder "+" (LED supply and button); the "+" and red wires are swapped. Red LED unavailable on V1. Profile updated (decision D2).
+- With the internal pull-up enabled, the released button idles near 1 V (encoder pull-down vs. internal pull-up): likely cause of the "EMI on pin 44" in V1. Pull-up now disabled.
+- At rest, only T3-home reads HIGH although all carriages are at home: to check whether T1/T2 switches are actually pressed.

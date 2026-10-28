@@ -48,12 +48,25 @@ constexpr uint32_t TMC_BAUD          = 115200;  // UART to the drivers
 // --- Interface ----------------------------------------------
 constexpr uint8_t PIN_ENC_A    = 46;   // encoder CLK
 constexpr uint8_t PIN_ENC_B    = 45;   // encoder DT
-constexpr uint8_t PIN_ENC_SW   = 44;   // encoder push button (polarity to be verified in step 1.1)
-constexpr uint8_t PIN_LED_R    = 49;
-constexpr uint8_t PIN_LED_G    = 48;   // measured on hardware (report says 50)
-constexpr uint8_t PIN_LED_B    = 50;   // measured on hardware (report says 48)
-constexpr bool    LED_ACTIVE_LOW = true;   // LOW = LED on
-constexpr uint8_t PIN_BUZZER   = 47;
+
+// Encoder push button: measured 2026-10-28. The encoder board has its own
+// pull-down, and the button connects to the encoder "+" pin -> pressed = HIGH.
+// Use WITHOUT the internal pull-up (with it, idle sits near 1 V = noise-prone).
+constexpr uint8_t PIN_ENC_SW         = 44;
+constexpr bool    ENC_SW_ACTIVE_HIGH = true;
+constexpr bool    ENC_SW_PULLUP      = false;
+
+// RGB LED: measured 2026-10-28. On V1 the "+" (common anode) and red wires
+// are swapped between PCB connector P1 and the encoder:
+//   pin 49 (PCB "ENC_R") actually feeds the encoder "+" = LED supply AND button.
+//   It must be driven HIGH at all times, or LEDs and button stop working.
+//   Red is not available on V1. Colours: green, blue, cyan.
+constexpr uint8_t PIN_ENC_SUPPLY = 49;
+constexpr bool    LED_HAS_RED    = false;
+constexpr uint8_t PIN_LED_G      = 48;   // LOW = on
+constexpr uint8_t PIN_LED_B      = 50;   // LOW = on (also SPI MISO)
+constexpr bool    LED_ACTIVE_LOW = true;
+constexpr uint8_t PIN_BUZZER     = 47;
 
 constexpr DisplayType  DISPLAY_TYPE  = DisplayType::OLED_SSD1306;
 constexpr uint8_t      OLED_ADDR     = 0x3C;

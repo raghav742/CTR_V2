@@ -30,12 +30,12 @@ V1 values verified against the PCB schematic (Casper's report, Bijlage A) and hi
 | Pin | Function | Note |
 |---|---|---|
 | 20 / 21 | OLED SDA / SCL (I2C, 0x3C) | 4.7 kΩ pull-ups on PCB |
-| 44 | Encoder push button | Polarity to verify (step 1.1) |
+| 44 | Encoder push button | Active HIGH, board has its own pull-down; use without internal pull-up |
 | 45 | Encoder DT (B) | Not an interrupt pin |
 | 46 | Encoder CLK (A) | Not an interrupt pin |
 | 47 | Buzzer (via 2N2222A) | 24 V piezo |
 | 48 | RGB LED green | LOW = on; report says blue |
-| 49 | RGB LED red | LOW = on |
+| 49 | **Encoder "+" supply** (PCB net "ENC_R") | V1 wiring fault: "+" and red swapped. Must stay HIGH; red unavailable |
 | 50 | RGB LED blue | LOW = on; also SPI MISO, so no SPI reads |
 
 ## Free pins
@@ -53,3 +53,9 @@ V1 values verified against the PCB schematic (Casper's report, Bijlage A) and hi
 | A2–A5 | Resistive touch |
 | A0/A1 or 4 digital inputs | APEM joystick (type to confirm) |
 | 2 | Emergency-stop input (if fitted) |
+
+## V2 hardware corrections
+
+| Item | Change | Reason |
+|---|---|---|
+| Encoder cable | Swap "+" and red: "+" to 5 V, red cathode to pin 49 | V1 has "+" on pin 49 and no red LED |
