@@ -106,6 +106,9 @@ bool checkMove(uint8_t i, float amount) {
 }
 
 void setHomingMove(bool on) { homingMove = on; }
+namespace { bool spanForced = false; }
+void forceSpanRule(bool on) { spanForced = on; }
+bool spanRuleForced() { return spanForced; }
 
 bool checkGroup(const float amount[], uint8_t mask) {
   if (homingMove) return true;           // homing / calib drive to switches on purpose

@@ -154,6 +154,11 @@ bool moveGroup(const float amount[], uint8_t mask, float speedPct, float duratio
   g.ap    = apLimit;
   g.vpMax = vpLimit * speedPct / 100.0f;
 
+  // duration < 0: "at least |duration|": as fast as speedPct allows if that is slower
+  if (duration < 0) {
+    duration = -duration;
+    if (duration <= profileTime(g.vpMax, g.ap)) duration = 0;   // speed limit decides
+  }
   if (duration > 0) {
     // Solve t = 1/vp + vp/ap for vp (smaller root = slower cruise)
     float disc = g.ap * g.ap * duration * duration - 4.0f * g.ap;

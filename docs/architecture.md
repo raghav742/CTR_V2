@@ -584,9 +584,25 @@ and on release becomes `ui::onSelect`; a long press (1 s) becomes `ui::onBack` i
 **The UI follows the robot** (`followRobot`): FAULT -> Error screen (short press = `ack`);
 homing / calib / park running (also from the console) -> Progress screen, then a short result
 notice; 2 min without input in a menu -> Status screen.
+**Jog (Step 3.3):** Menu -> Jog -> axis list -> jog screen. Each encoder click adds one step
+(translation 0.1 / 1 / 5 mm, rotation 1 / 10 / 45 deg; short press while still = next size) to
+a queued distance; when the axis is free the queue is sent as one move, clipped to
+`limits::range()` so a carriage stops exactly at its limit (beep + "LIMIT" flash). A press
+while moving is STOP and drops the queue. The large position uses `fastgfx::text2`
+(double-size text: each font column bit doubled into a 16-bit column, written byte-wise).
 **Protocol:** actions started from the menu print `EV ui ...` lines; the quiet variants of
 `homing::start`, `calib::start`, `rotzero::setZero` and `rotzero::park` suppress `OK` lines,
 which stay reserved for replies to console commands.
+
+### Demo sequencer (Step 3.4, `demo.cpp`, decision D12)
+A program is a table of steps in flash: `{base, ext2, ext3, rot[3], ms, pause}`. Conversion:
+`T1 = 2 mm + base x (front_max_usable − 2)`, `T2 = T1 + ext2 x usable gap1`,
+`T3 = T2 + ext3 x usable gap2` (usable = gap − margin − extra), rotations = zero + degrees.
+All axes go to the pose in one coordinated move (`moveGroup` with a negative duration =
+"at least ms", speed limited to `DEMO_SPEED_PCT`), then the pause, then the next step; the
+program loops. States: DEMO while running. Stops on a press (also during a pause), `demo stop`,
+a fault or any state change; reports `EV demo stopped (...) loops=n`. Programs: Telescope,
+Wave, Spin. The UI shows a program list and a "DEMO RUNNING" screen.
 
 ### Buzzer (`buzzer.cpp`)
 Casper's melodies (click, beep, ok, boot, error, home) as note tables in flash, played with
@@ -605,12 +621,12 @@ watches the state machine itself: FAULT -> error melody, HOMING -> READY -> home
 - **Runtime diagnostic commands** (`chop`, `ms`, `cur`) allow testing driver settings
   without reflashing; this is how the StealthChop slip was diagnosed in minutes.
 
-## 11. Console commands (firmware 3.2.0)
+## 11. Console commands (firmware 3.4.0)
 ```
 help  status  state  ack  safety  wdtest  inputs  watch on|off  led g|b|c|r|off [slow|fast]
 drivers  move <1-6> <amount> [speed]  mv <axis>=<amount> ... [t=<s>] [v=<%>]
 stop  pos  en <1-6|all>  dis <1-6|all>  isr reset  home [2|4|6]  calib  limits
-zero <1|3|5|all>  park  settings  forget
+zero <1|3|5|all>  park  settings  forget  demo [1-3|stop]
 info  ping  st  stream <ms>|off          (protocol, Step 1.6; prefix any command with #<id>)
 chop <1-6> stealth|spread|hybrid [speed]  ms <1-6> <2..32>  cur <1-6> <mA>
 ```

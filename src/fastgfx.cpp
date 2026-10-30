@@ -59,6 +59,25 @@ uint8_t text(uint8_t x, uint8_t y, const __FlashStringHelper* s, bool inverse) {
   return x;
 }
 
+// Double size: every font pixel becomes 2x2. A glyph column (7 bits) is spread
+// to 14 bits and written as two 8-pixel columns stacked (y and y + 8), twice.
+uint8_t text2(uint8_t x, uint8_t y, const char* s) {
+  while (*s && x < W) {
+    const uint8_t* g = font + 5 * (uint8_t)*s++;
+    for (uint8_t i = 0; i < 5; i++) {
+      uint8_t b = pgm_read_byte(g + i);
+      uint16_t w = 0;
+      for (uint8_t k = 0; k < 8; k++) if (b & (1 << k)) w |= (uint16_t)3 << (2 * k);
+      for (uint8_t r = 0; r < 2; r++) {
+        column(x + 2 * i + r, y,     (uint8_t)(w & 0xFF), false);
+        column(x + 2 * i + r, y + 8, (uint8_t)(w >> 8),   false);
+      }
+    }
+    x += 2 * CHAR_W;
+  }
+  return x;
+}
+
 uint8_t num(uint8_t x, uint8_t y, float v, uint8_t width, uint8_t dec, bool inverse) {
   char b[14];
   dtostrf(v, width, dec, b);

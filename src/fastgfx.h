@@ -20,6 +20,8 @@ void fill(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, bool on);
 uint8_t text(uint8_t x, uint8_t y, const char* s, bool inverse = false);
 uint8_t text(uint8_t x, uint8_t y, const __FlashStringHelper* s, bool inverse = false);
 uint8_t chr(uint8_t x, uint8_t y, char c, bool inverse = false);
+// Double-size text (12x16 per character), e.g. for a large position
+uint8_t text2(uint8_t x, uint8_t y, const char* s);
 // Number right-aligned in 'width' characters with 'dec' decimals
 uint8_t num(uint8_t x, uint8_t y, float v, uint8_t width, uint8_t dec, bool inverse = false);
 }  // namespace fastgfx

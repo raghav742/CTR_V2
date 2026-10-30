@@ -20,6 +20,7 @@ bool  moveRelative(uint8_t axis, float amount, float speed = 0, bool quiet = fal
 // Coordinated move: all axes in 'mask' start and finish together.
 // amount[i] relative (mm or deg); speedPct of the fastest allowed;
 // duration > 0 = take exactly that many seconds; singleSpeed: see .cpp
+// duration > 0: take exactly this long (ERR if impossible); < 0: at least |duration|
 bool  moveGroup(const float amount[], uint8_t mask, float speedPct = 100,
                 float duration = 0, float singleSpeed = 0, bool quiet = false);
 void  stopAll(const __FlashStringHelper* reason);

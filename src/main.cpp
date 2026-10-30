@@ -24,6 +24,7 @@
 #include "display.h"
 #include "buzzer.h"
 #include "ui.h"
+#include "demo.h"
 #include "serial_io.h"
 
 // Handle input events once per pass.
@@ -46,6 +47,7 @@ static void handleEvents() {
     if (w) Out.println(F("EV btn press"));
     if (ui::motionActive()) {
       safety::userStop(F("encoder button"), encoder::pressEdgeUs());
+      if (demo::active()) demo::stop();          // also between two demo moves
       pressArmed = false;
     } else {
       pressArmed = true;
@@ -81,6 +83,7 @@ void setup() {
   steppers::begin();
   motion::begin();
   homing::begin();
+  demo::begin();
   calib::begin();
   settings::begin();          // EEPROM: before limits and rotation zero
   limits::begin();
@@ -105,6 +108,7 @@ void loop() {
   homing::update();           // right after the switches: stop on the edge this pass
   calib::update();
   rotzero::update();
+  demo::update();
   buzzer::update();
   display::update();          // sends one small piece of the current frame
   ui::update();

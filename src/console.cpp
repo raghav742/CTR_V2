@@ -16,6 +16,7 @@
 #include "limits.h"
 #include "settings.h"
 #include "rotation_zero.h"
+#include "demo.h"
 
 namespace console {
 namespace {
@@ -59,6 +60,7 @@ namespace {
     Out.println(F("  zero <1|3|5|all>  current angle of a rotation axis becomes 0"));
     Out.println(F("  park              rotations to their zero, carriages to rest; then power off"));
     Out.println(F("  settings          what is stored in EEPROM"));
+    Out.println(F("  demo [1-3|stop]   list demos, run one (loops until stopped), stop"));
     Out.println(F("  forget            erase the stored calib result (use profile values)"));
     Out.println(F("  stop              stop all motors (also aborts homing)"));
     Out.println(F("  pos               positions of all axes"));
@@ -109,6 +111,19 @@ namespace {
     int8_t i = parseAxis(a);
     if (i < 0) { Out.println(F("ERR usage: home [2|4|6]")); return; }
     homing::start(i);
+  }
+
+  void cmdDemo(const char* a) {
+    if (!a) {
+      Out.print(F("OK demos"));
+      for (uint8_t p = 0; p < demo::count(); p++) { Out.print(' '); Out.print(p + 1); Out.print('='); Out.print(demo::name(p)); }
+      Out.println();
+      return;
+    }
+    if (!strcmp(a, "stop")) { if (demo::active()) { demo::stop(); Out.println(F("OK demo stop")); } else Out.println(F("OK demo not running")); return; }
+    int n = atoi(a);
+    if (n < 1 || n > demo::count()) { Out.println(F("ERR usage: demo [1-3|stop]")); return; }
+    demo::start(n - 1);
   }
 
   void cmdZero(const char* a) {
@@ -323,6 +338,7 @@ namespace {
     else if (!strcmp(argv[0], "limits")) limits::report();
     else if (!strcmp(argv[0], "zero"))   cmdZero(argv[1]);
     else if (!strcmp(argv[0], "park"))   rotzero::park();
+    else if (!strcmp(argv[0], "demo"))   cmdDemo(argv[1]);
     else if (!strcmp(argv[0], "settings")) settings::report();
     else if (!strcmp(argv[0], "forget")) { settings::forgetCalib(); limits::begin(); Out.println(F("OK stored calib erased (profile values in use)")); }
     else if (!strcmp(argv[0], "stop"))   { safety::userStop(F("command"), micros()); Out.println(F("OK stop")); }

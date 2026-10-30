@@ -51,6 +51,7 @@ wait for the `OK`/`ERR` line with its id, ignoring everything else in between.
 | `status` | firmware, profile, state, loops/s, maxloop_us, isr_max_us, uptime_s, st_skipped |
 | `settings` | `OK settings eeprom=valid|empty calib=<0/1> [front_max=.. gap1=.. gap2=..] parked=<0/1>` |
 | `zero <1|3|5|all>` / `park` / `forget` | rotation zero, park before power-off, erase stored calib |
+| `demo` / `demo <1-3>` / `demo stop` | list demos (`OK demos 1=Telescope ...`), run one in a loop, stop |
 | `limits` | `OK limits calibrated=<0/1> source=profile|calib|eeprom active=<0/1> front_max=.. gap_<A>/<B>=.. margin=.. extra=<mm per carriage> span_tol=.. range_now=<axis>:<lo>..<hi>,...` (`?` = no limit known) |
 
 Status line (stream):
@@ -100,6 +101,8 @@ the order of `info`. Units: translation mm and mm/s; rotation degrees and rpm.
 | `EV rotation zero restored (robot was parked)` / `EV rotation zero unknown ...` | Startup: rotation zeros |
 | `EV park done: safe to power off ...` / `EV park aborted` | Result of `park` |
 | `EV ui home` / `EV ui calib` / `EV ui park` / `EV zero set <axes>` | Action started from the display menu |
+| `EV demo start <name>` / `EV demo stopped (<why>) loops=<n>` | Demo started / ended |
+| `EV ui demo <name>` | Demo started from the display menu |
 | `EV calib re-homing` | calib finished; automatic `home` follows (its EV home lines) |
 | `EV calib aborted (previous values kept)` | Stopped by `stop`, encoder or fault |
 | `EV calib failed calib <axis>: <why>` | Switch not found / implausible gap; followed by FAULT |

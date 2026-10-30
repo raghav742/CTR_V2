@@ -25,4 +25,11 @@ bool  active();                 // calibrated AND all carriages homed
 // Prints "ERR ..." and returns false if so.
 bool  checkMove(const float amount[], uint8_t mask);
 void  report();                 // console "limits"
+// Current range of a translation axis if moved alone (false = not a carriage).
+// Unknown bounds are returned as NAN.
+bool  range(uint8_t axis, float& lo, float& hi);
+// Geometry for pose-based motion (demos): front carriage maximum and the usable
+// extension of each carriage beyond the one in front (gap - margin - extra).
+// False if limits are not active.
+bool  geometry(float& frontMaxUsable, float extMax[]);
 }  // namespace limits

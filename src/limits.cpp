@@ -5,6 +5,7 @@
 #include "motion.h"
 #include "homing.h"
 #include "settings.h"
+#include "safety.h"
 
 namespace limits {
 namespace {
@@ -28,13 +29,13 @@ namespace {
   float upper(uint8_t k, const float p[]) {
     float u = 1e9f;
     if (active()) u = contactLimit(k, p);
-    if (motion_cfg::SPAN_RULE_FOR_MOVES && k + 1 < C && homedPair(k))
+    if ((motion_cfg::SPAN_RULE_FOR_MOVES || safety::spanRuleForced()) && k + 1 < C && homedPair(k))
       u = fminf(u, p[k + 1] + motion_cfg::LIMIT_SPAN_TOL_MM);
     return u;
   }
   float lower(uint8_t k, const float p[]) {
     float l = homing::axisHomed(ax(k)) ? motion_cfg::TRA_SOFT_MIN_MM : -1e9f;
-    if (motion_cfg::SPAN_RULE_FOR_MOVES && k > 0 && homedPair(k - 1))
+    if ((motion_cfg::SPAN_RULE_FOR_MOVES || safety::spanRuleForced()) && k > 0 && homedPair(k - 1))
       l = fmaxf(l, p[k - 1] - motion_cfg::LIMIT_SPAN_TOL_MM);
     return l;
   }
@@ -109,7 +110,7 @@ bool checkMove(const float amount[], uint8_t mask) {
     if (!involved) continue;
 
     // span: not further ahead of the carriage behind than at home
-    if (motion_cfg::SPAN_RULE_FOR_MOVES && k + 1 < C && homedPair(k) &&
+    if ((motion_cfg::SPAN_RULE_FOR_MOVES || safety::spanRuleForced()) && k + 1 < C && homedPair(k) &&
         endPos[k] > endPos[k + 1] + motion_cfg::LIMIT_SPAN_TOL_MM + 0.005f) {
       Out.print(F("ERR ")); Out.print(nm(k)); Out.print(F(" would be "));
       Out.print(endPos[k] - endPos[k + 1], 2); Out.print(F(" mm ahead of ")); Out.print(nm(k + 1));
@@ -129,6 +130,26 @@ bool checkMove(const float amount[], uint8_t mask) {
       }
     }
   }
+  return true;
+}
+
+bool geometry(float& frontMaxUsable, float extMax[]) {
+  if (!active()) return false;
+  frontMaxUsable = fMax - motion_cfg::LIMIT_MARGIN_MM - hw::CARRIAGE_EXTRA_MARGIN_MM[0];
+  for (uint8_t k = 1; k < C; k++)
+    extMax[k - 1] = gaps[k - 1] - motion_cfg::LIMIT_MARGIN_MM - hw::CARRIAGE_EXTRA_MARGIN_MM[k];
+  return true;
+}
+
+bool range(uint8_t axis, float& lo, float& hi) {
+  int8_t k = -1;
+  for (uint8_t j = 0; j < C; j++) if (ax(j) == axis) k = j;
+  if (k < 0) return false;
+  float p[C];
+  for (uint8_t j = 0; j < C; j++) p[j] = motion::position(ax(j));
+  lo = lower(k, p); hi = upper(k, p);
+  if (lo < -1e8f) lo = NAN;
+  if (hi > 1e8f)  hi = NAN;
   return true;
 }
 
