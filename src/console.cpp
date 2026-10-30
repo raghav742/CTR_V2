@@ -12,6 +12,8 @@
 #include "system_state.h"
 #include "safety.h"
 #include "homing.h"
+#include "calib.h"
+#include "limits.h"
 
 namespace console {
 namespace {
@@ -50,6 +52,8 @@ namespace {
     Out.println(F("  move <1-6> <amount> [speed]   mm & mm/s (translation) or deg & rpm (rotation)"));
     Out.println(F("  mv <axis>=<amount> ... [t=<s>] [v=<%>]   coordinated move, all finish together"));
     Out.println(F("  home [2|4|6]      home all translation axes (T3, T2, T1) or one"));
+    Out.println(F("  calib             measure far end and gaps between carriages (after home)"));
+    Out.println(F("  limits            measured limits and current maximum per carriage"));
     Out.println(F("  stop              stop all motors (also aborts homing)"));
     Out.println(F("  pos               positions of all axes"));
     Out.println(F("  en <1-6|all> / dis <1-6|all>  enable / disable motor drivers"));
@@ -301,6 +305,8 @@ namespace {
     else if (!strcmp(argv[0], "move"))   cmdMove(argv[1], argv[2], argv[3]);
     else if (!strcmp(argv[0], "mv"))     cmdMv(argc, argv);
     else if (!strcmp(argv[0], "home"))   cmdHome(argv[1]);
+    else if (!strcmp(argv[0], "calib"))  calib::start();
+    else if (!strcmp(argv[0], "limits")) limits::report();
     else if (!strcmp(argv[0], "stop"))   { safety::userStop(F("command"), micros()); Out.println(F("OK stop")); }
     else if (!strcmp(argv[0], "safety")) safety::report();
     else if (!strcmp(argv[0], "wdtest")) safety::watchdogTest();

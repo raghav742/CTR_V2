@@ -399,22 +399,36 @@ Each translation carriage carries its own switch. Moving backward, the switch pr
 against a fixed block on the frame. So each carriage's zero is fixed to the frame and
 does not depend on where the other carriages are.
 
-### The procedure (`homing.cpp`)
-`home` homes T3, then T2, then T1 (`HOME_ORDER` in the hardware profile: back carriage
-first, so every carriage moves backward into space the one behind it has already left).
-For each axis:
-1. **Clear** — if the switch is already pressed (T3 usually rests on its block), move
-   forward until it releases, then 1 mm further.
-2. **Seek** — move backward at 5 mm/s (up to 210 mm). The switch is marked *expected* in
-   the safety manager, so pressing it is not a fault.
-3. **Zero** — the pass in which the debounced switch reads pressed, the move is stopped
-   and the step counter set to 0. Debounce (5 ms) at 5 mm/s = 0.025 mm.
-4. **Clear** again — forward until the switch releases (`switch released at`), +1 mm.
-5. The axis is marked homed; the next axis starts. After the last one: READY.
+### The tube constraint
+The tubes are concentric: each carriage holds a tube that runs forward into the tube of the
+carriage in front. Between two carriages that tube is unsupported. At home the span is the
+largest that is safe; if a carriage gets further ahead of the one behind it, the slender
+tube hangs over a longer distance and buckles. So carriages must move **together** whenever
+a span would grow (decision D8, D9). In positions (each from its own zero): T1 ≤ T2 ≤ T3.
 
-It is a small state machine (`Phase`: Clear, Extra, Seek) advanced by `homing::update()`
-every loop pass, right after `limit_switches::update()` so a switch edge stops the move in
-the same pass. Nothing waits, so the safety manager, the encoder and the console keep working.
+### The procedure (`homing.cpp`, v2.3.3)
+**Part 1 — fast, all together.** All carriages still searching move backward in **one
+coordinated move** at 15 mm/s (equal distances and one speed limit = identical speeds), so
+every gap stays the same. The switches are *expected* in the safety manager. When any of
+them reaches its switch (`switch reached (fast)`), the whole move stops and the others
+continue together. Two carriages can only close in once the one behind has stopped at its
+block; since there is a gap between all carriages at home, the one in front reaches its own
+block first, so the dual-role switch is always pressed by the block.
+
+**Part 2 — slow, one at a time** (T3, T2, T1), only a few mm each:
+1. **Clear** — forward until the switch releases, then 2 mm further.
+2. **Slow seek and zero** — backward at 5 mm/s; the pass in which the debounced switch
+   reads pressed, the move is stopped and the step counter set to 0. Debounce (5 ms) at
+   5 mm/s = 0.025 mm. Only this approach sets the zero, so part 1 can be fast.
+3. **Clear** — forward until the switch releases (`switch released at`), +1 mm.
+4. If a carriage's switch is *not* pressed at the start of part 2 (e.g. it was pressed by
+   the carriage behind when homing started), that carriage first does its own fast approach.
+
+State machine: `Phase` Group / Clear / Extra / Seek, plus `stage` (0 = needs its own fast
+approach, 1 = slow approach next, 2 = zero set), advanced by `homing::update()` every loop
+pass, right after `limit_switches::update()` so a switch edge stops the move in the same pass.
+Nothing waits, so the safety manager, the encoder and the console keep working.
+History: v2.1 one carriage at a time, slow only; v2.3.1 one at a time, two speeds.
 
 ### How homing fits the other modules
 - **State machine:** `home` requests HOMING (allowed from IDLE and READY). The end result is
@@ -425,18 +439,81 @@ the same pass. Nothing waits, so the safety manager, the encoder and the console
 - **Aborting:** every `motion::stopAll()` (command `stop`, encoder press, fault) increments
   `motion::stopCount()`. Homing remembers the count when it starts; if it changes, homing
   aborts (`EV home aborted`) and returns to IDLE (unless already in FAULT).
-- **Quiet moves:** homing calls `motion::moveRelative(..., quiet=true)`, which suppresses
-  the `OK mv` and `EV done` lines, because an `OK` line must only ever answer a command.
-  `motion::stopGroupOf(axis)` stops just homing's move when the switch is found.
-- **Failure:** switch not found within 210 mm, or a switch that does not release within
-  10 mm, means a hardware problem -> `EV home failed ...` and FAULT.
+- **Quiet moves:** homing calls `motion::moveGroup(..., quiet=true)` / `moveRelative`, which
+  suppress the `OK mv` and `EV done` lines, because an `OK` line must only ever answer a
+  command. `motion::stopGroupOf(axis)` stops just homing's move when a switch is found.
+- **Failure:** switch not found within 1000 mm (practically unlimited: only a broken switch
+  or cable), or a switch that does not release within 10 mm -> `EV home failed ...` and FAULT.
+- `home 2|4|6` homes one carriage alone (for testing); it can briefly break the span rule.
 
 ### After homing
 - Per-axis homed flags (`homing::axisHomed(i)`, `homed=` in `st` and the stream).
-- The 50 mm single-move limit only applies to axes that are not homed.
+- The span rule (T1 ≤ T2 ≤ T3 + 1 mm) applies as soon as two neighbours are homed.
 - A homed axis cannot be sent below `TRA_SOFT_MIN_MM` (1.0 mm): at 0 the switch is
-  pressed, and just behind it is the block. The upper limit follows in step 2.2.
+  pressed, and just behind it is the block.
+- The 50 mm single-move limit applies until `calib` has measured the upper limits.
 - Disabling a driver (`dis`) discards that axis' zero (the carriage could be moved by hand).
+
+## 9b. Calibration and travel limits (Steps 2.2 + 2.3, decision D9)
+
+### Why
+After homing the robot knows each carriage's zero, but not how far forward it may go. T1
+has a far switch. T2 and T3 can only be stopped by the carriage in front: switch 38 on the
+back of T1 is pressed by T1's block **or** by T2 touching T1; switch 40 on the back of T2 by
+T2's block **or** by T3. These switches are a backup only: if T1 rests on its block, switch
+38 is already pressed, and T2 touching T1 gives no new edge, so nothing would stop T2.
+
+### What `calib` measures (`calib.cpp`)
+A list of operations built from the hardware profile (`CARRIAGE_ORDER` front to back) and
+run one by one from `calib::update()`, like homing:
+
+| Op | Moving | Until | Result |
+|---|---|---|---|
+| Approach 15 → 5 mm/s | T1 + T2 + T3 together | far switch 39 | `front_max` = T1 position; T1 stays there |
+| Approach 10 → 3 mm/s | T2 + T3 together | switch 38 (T2 touches T1) | `gap1` = T2 − T1 |
+| MOVETO 50 mm | all three together | | park, so T3 is measured well inside its range |
+| Approach 10 → 3 mm/s | T3 alone (span only shrinks) | switch 40 (T3 touches T2) | `gap2` = T3 − T2 (contact at ~400 mm) |
+| MOVETO 2 mm, 20 mm/s | all three in one coordinated move | | |
+
+Each "approach" is four operations: SEEK fast (the group), then for the measured carriage
+only: CLEAR (release + 2 mm), SEEK slow (records), CLEAR (release + 5 mm, `CALIB_SEPARATE_MM`, so a push of the
+next carriage cannot reach the far switch). These short refinements are the only moves of
+one carriage alone.
+History: v2.3.0 parked carriages at 30 mm and measured one at a time; v2.3.2 (Raghav's
+procedure) let each carriage stay at its maximum; v2.3.3 moves carriages together because
+of the tube constraint; v2.3.5 parks all three at 50 mm before T3 is measured, because at T3's
+full extension (~615 mm) other switches were disturbed (39 and 42 hit, twice at that moment). Robot so far: front_max 151.19 / 151.37 mm, gap T1/T2 118.03 / 118.07 / 117.84 mm,
+gap T2/T3 349.13 mm.
+
+Why "gap at contact" works: every carriage's position is measured from its own zero. When
+T2 touches T1, `T2 − T1` is the same number wherever along the rail it happens: it is the
+gap the two have when both are at zero. So one measurement describes contact everywhere.
+
+### The rules (`limits.cpp`)
+Between each carriage and the one behind it:
+- **Span** (needs homing only): `front <= back + 1 mm` — never further apart than at home.
+- **Contact** (needs calib): `back <= front + gap − margin − extra` (margin 2 mm; extra per
+  carriage from `CARRIAGE_EXTRA_MARGIN_MM`: T3 50 mm, because at its full range it disturbed
+  the front of the robot).
+- Front carriage: `position <= front_max − margin`.
+
+So each carriage is boxed in: `back − gap + margin <= front <= back + 1`. To move a carriage
+forward, the carriages behind it come along in the same `mv`; a back carriage may close in
+alone.
+- Checked by `safety::checkGroup()` inside `motion::moveGroup()`, on the **end positions**
+  of the move. Coordinated moves are proportional, so each gap changes linearly between start
+  and end: if it is fine at both ends it is fine all the way.
+- A carriage whose neighbour is busy in a *different* move cannot be checked (the neighbour's
+  end is unknown), so that is refused: combine them in one `mv`.
+- Homing and calib bypass the rules (`setHomingMove`), because they drive to switches on purpose.
+- Until limits are active (calibrated + all three homed), the 50 mm per-move limit applies.
+- **Known values:** `hw_profile_v1.h` holds the values measured on the robot
+  (`CALIB_DEFAULT_FRONT_MAX_MM`, `CALIB_DEFAULT_GAP_MM`); `limits::begin()` loads them at
+  startup, so the limits are active right after `home`. `calib` re-measures; a value more
+  than 5 mm from the profile value is rejected (lost steps on V1), and `calib` always ends
+  with an automatic `home` so positions are right afterwards (v2.3.6).
+- `limits` prints the measured values, `source=profile|calib`, and `range_now`: the lowest..highest position each
+  carriage could move to on its own right now.
 
 ## 10. Development and test method
 
@@ -450,19 +527,19 @@ the same pass. Nothing waits, so the safety manager, the encoder and the console
 - **Runtime diagnostic commands** (`chop`, `ms`, `cur`) allow testing driver settings
   without reflashing; this is how the StealthChop slip was diagnosed in minutes.
 
-## 11. Console commands (firmware 2.1.0)
+## 11. Console commands (firmware 2.3.3)
 ```
 help  status  state  ack  safety  wdtest  inputs  watch on|off  led g|b|c|r|off [slow|fast]
 drivers  move <1-6> <amount> [speed]  mv <axis>=<amount> ... [t=<s>] [v=<%>]
-stop  pos  en <1-6|all>  dis <1-6|all>  isr reset  home [2|4|6]
+stop  pos  en <1-6|all>  dis <1-6|all>  isr reset  home [2|4|6]  calib  limits
 info  ping  st  stream <ms>|off          (protocol, Step 1.6; prefix any command with #<id>)
 chop <1-6> stealth|spread|hybrid [speed]  ms <1-6> <2..32>  cur <1-6> <mA>
 ```
 Axes: 1 T1-Rot, 2 T1-Tra, 3 T2-Rot, 4 T2-Tra, 5 T3-Rot, 6 T3-Tra.
 Units: translation mm and mm/s; rotation degrees and rpm.
 Order front to back: T1, T2, T3. Moving forward, T2 approaches T1 and T3 approaches T2;
-moving backward, T1 approaches T2 and T2 approaches T3. No switch detects carriage contact
-(step 2.3 adds a software rule).
+moving backward, T1 approaches T2 and T2 approaches T3. Contact is prevented by the limits
+(switches 38/40 also detect contact; the software limits of step 2.3 prevent it).
 
 ## 12. Open items
 - Longest loop pass on the robot is ~9 ms, caused by the driver health check (two blocking
@@ -473,6 +550,6 @@ moving backward, T1 approaches T2 and T2 approaches T3. No switch detects carria
 - With all six axes at maximum speed the step interrupt uses most of the CPU (simulator:
   ~900 loop passes/s). Fine for now; revisit if demos need all axes at full speed together.
 - Rotation axes have no zero reference yet (Step 2.4).
-- Travel per carriage (T1 to its far switch; T2 and T3 limited by the carriage in front)
-  to be measured in step 2.2. T1's stroke looks short (~20–30 mm).
-- Gaps between carriages when all are homed (G12, G23) to be measured for step 2.3.
+- Calibration values are lost at power-off until step 2.5 (EEPROM).
+- Homing from far away is slow (up to ~30 s per carriage at 5 mm/s). Option: faster
+  approach, then a slow final approach.

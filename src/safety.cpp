@@ -8,6 +8,7 @@
 #include "motion.h"
 #include "system_state.h"
 #include "homing.h"
+#include "limits.h"
 
 // Survive a reset (not cleared by startup code): lets us tell after a
 // restart that the watchdog fired.
@@ -78,9 +79,12 @@ bool checkMove(uint8_t i, float amount) {
   if (sys::get() == sys::State::Homing && !homingMove) { Out.println(F("ERR homing in progress")); return false; }
   if (!isTra(i)) return true;
 
-  // Without a zero, positions are only counted steps: keep single moves short
-  if (!homingMove && !homing::axisHomed(i) && fabsf(amount) > motion_cfg::TRA_MAX_MOVE_UNHOMED) {
-    Out.print(F("ERR ")); Out.print(name); Out.print(F(" not homed: moves limited to "));
+  // Without a zero and measured limits, positions say nothing about the
+  // carriage in front: keep single moves short
+  if (!homingMove && !limits::active() && fabsf(amount) > motion_cfg::TRA_MAX_MOVE_UNHOMED) {
+    Out.print(F("ERR ")); Out.print(name);
+    Out.print(homing::axisHomed(i) ? F(" limits not calibrated (run calib)") : F(" not homed"));
+    Out.print(F(": moves limited to "));
     Out.print(motion_cfg::TRA_MAX_MOVE_UNHOMED, 0); Out.println(F(" mm"));
     return false;
   }
@@ -102,6 +106,11 @@ bool checkMove(uint8_t i, float amount) {
 }
 
 void setHomingMove(bool on) { homingMove = on; }
+
+bool checkGroup(const float amount[], uint8_t mask) {
+  if (homingMove) return true;           // homing / calib drive to switches on purpose
+  return limits::checkMove(amount, mask);
+}
 
 void expectSwitch(int8_t s, bool expected) {
   if (s >= 0 && s < (int8_t)hw::NUM_SWITCHES) swExpected[s] = expected;

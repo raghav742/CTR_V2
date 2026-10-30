@@ -46,6 +46,26 @@ constexpr SwitchConfig SWITCHES[NUM_SWITCHES] = {
 constexpr uint8_t NUM_HOMED_AXES = 3;
 constexpr uint8_t HOME_ORDER[NUM_HOMED_AXES] = { 5, 3, 1 };   // T3-Tra, T2-Tra, T1-Tra
 
+// Carriages front to back (step 2.2/2.3). The front carriage stops at its
+// far-end switch. Every other carriage's front limit is the carriage in front
+// of it: touching it presses the home switch on the BACK of that carriage
+// (switch 38 on T1 is pressed by T1's block or by T2; switch 40 on T2 by T2's
+// block or by T3). With all carriages homed there is a gap between them.
+constexpr uint8_t CARRIAGE_ORDER[NUM_HOMED_AXES] = { 1, 3, 5 };   // T1, T2, T3
+// Extra distance each carriage keeps from its measured upper limit, on top of
+// LIMIT_MARGIN_MM (same order). T3: 50 mm (2026-10-30): at its full measured range
+// (~615 mm) T3 disturbed the front of the robot (T1 far switch was hit).
+constexpr float CARRIAGE_EXTRA_MARGIN_MM[NUM_HOMED_AXES] = { 0.0f, 0.0f, 50.0f };
+
+// Known travel values (measured with "calib" on 2026-10-30; smallest value of the
+// good runs = safe side). Loaded at startup, so the limits work right after
+// "home" without running calib. calib rejects a new measurement that differs
+// from these by more than CALIB_MAX_DEVIATION_MM (lost steps). 0 = unknown.
+//   T1 stroke: 151.42, 151.19, 151.37 | gap T1/T2: 118.03, 118.07, 117.84
+//   gap T2/T3: 349.13 (runs with T1 slipping gave 354.5, 354.4)
+constexpr float CALIB_DEFAULT_FRONT_MAX_MM = 151.2f;
+constexpr float CALIB_DEFAULT_GAP_MM[NUM_HOMED_AXES - 1] = { 117.8f, 349.1f };
+
 // --- Mechanics ----------------------------------------------
 constexpr uint16_t FULLSTEPS_PER_REV = 200;     // 1.8 deg motors
 constexpr float    LEAD_MM           = 2.0f;    // lead screw: 0.01 mm per full step (Nanotec)

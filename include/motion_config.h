@@ -36,14 +36,39 @@ constexpr float TRA_MAX_MOVE_UNHOMED = 50.0f;   // mm
 constexpr uint16_t RAMP_UPDATE_US = 1000;
 
 // Homing (step 2.1)
-constexpr float HOME_SPEED      = 5.0f;    // mm/s while searching and clearing the switch
-constexpr float HOME_SEARCH_MM  = 210.0f;  // give up if the switch is not found (travel + margin)
+// Two-speed approach (like CNC machines): fast until the switch clicks, back off
+// HOME_REAPPROACH_MM, then slowly onto the switch again. Only the slow approach
+// sets the position, so the fast one can be quick without losing accuracy.
+constexpr float HOME_FAST_SPEED    = 10.0f;   // mm/s, first approach (V1: lower = less slip)
+constexpr float HOME_SPEED         = 5.0f;    // mm/s, final approach and clearing the switch
+constexpr float HOME_REAPPROACH_MM = 2.0f;    // back-off before the slow approach
+constexpr float HOME_SEARCH_MM     = 1000.0f; // practically unlimited: only catches a broken switch
+                                              // or cable (no carriage can travel 1 m)
 constexpr float HOME_CLEAR_MM   = 10.0f;   // max forward move to release a pressed switch
 constexpr float HOME_BACKOFF_MM = 1.0f;    // extra distance after the switch releases
 // Lowest position a homed translation axis may be sent to. At 0 the switch is
 // pressed (zero = the press point); it releases a little further forward
 // (printed by homing as "released at"). Must be above that release point.
 constexpr float TRA_SOFT_MIN_MM = 1.0f;
+
+// Calibration of the front limits (step 2.2) and limit margin (step 2.3)
+constexpr float CALIB_CONTACT_FAST  = 8.0f;   // mm/s, first approach of one carriage onto the next
+constexpr float CALIB_CONTACT_SPEED = 3.0f;   // mm/s, final approach (sets the gap)
+constexpr float CALIB_MOVE_SPEED    = 10.0f;  // mm/s, parking and return moves (V1: lower = less slip)
+constexpr float CALIB_MAX_DEVIATION_MM = 5.0f; // reject a calib value this far from the profile value
+constexpr float CALIB_REST_MM       = 2.0f;   // where calib leaves each carriage at the end
+constexpr float CALIB_PARK_MM       = 50.0f;  // before the 3rd carriage (T3) is measured, all carriages
+                                              // go here together, so T3 touches T2 at ~50 + gap
+                                              // (~400 mm) instead of at its full extension (~615 mm,
+                                              // where it disturbed switches 39 and 42 on 2026-10-30)
+constexpr float CALIB_SEPARATE_MM   = 5.0f;   // after a measurement, back off this far before
+                                              // the next carriage approaches (absorbs pushes)
+constexpr float LIMIT_MARGIN_MM     = 2.0f;   // stay this far from the far switch / the carriage in front
+// Span rule: a carriage may not get further ahead of the carriage behind it than
+// at home (the tube between them hangs unsupported and buckles). In positions:
+// front <= back + LIMIT_SPAN_TOL_MM. The tolerance covers the small differences
+// homing leaves (each carriage rests 1.3-1.4 mm off its switch).
+constexpr float LIMIT_SPAN_TOL_MM   = 1.0f;
 
 // Driver health check (safety): one driver per interval, round-robin, so each
 // driver is checked every 6 x interval. One check = 2 UART reads = ~9 ms of

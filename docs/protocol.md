@@ -49,6 +49,7 @@ wait for the `OK`/`ERR` line with its id, ignoring everything else in between.
 | `st` | `OK t=<ms> state=<STATE> busy=<6 x 0/1> pos=<p1>,...,<p6> homed=<6 x 0/1>` |
 | `stream <ms>` / `stream off` / `stream` | Start (20–10000 ms), stop, or show the status stream |
 | `status` | firmware, profile, state, loops/s, maxloop_us, isr_max_us, uptime_s, st_skipped |
+| `limits` | `OK limits calibrated=<0/1> source=profile|calib active=<0/1> front_max=.. gap_<A>/<B>=.. margin=.. extra=<mm per carriage> span_tol=.. range_now=<axis>:<lo>..<hi>,...` (`?` = no limit known) |
 
 Status line (stream):
 ```
@@ -77,14 +78,24 @@ the order of `info`. Units: translation mm and mm/s; rotation degrees and rpm.
 | `EV stop <reason>` | All motion stopped (command, encoder button, ...) |
 | `EV reaction_ms=<ms>` | Time from the stop input to motors stopped |
 | `EV enc`, `EV btn`, `EV switch` | Input events (only with `watch on`) |
-| `EV home <axis> start` | Homing of one axis begins |
-| `EV home <axis> zero set (was at <mm> mm)` | Switch found; position set to 0 (old counted position shown) |
+| `EV home <axis> switch reached (fast) at <mm> mm` | Fast approach (all together) reached this carriage's switch |
+| `EV home <axis> zero set (was at <mm> mm)` | Slow approach found the switch; position set to 0 (old counted position shown) |
 | `EV home <axis> switch released at <mm> mm` | Where the switch lets go when moving forward again |
 | `EV home <axis> ok pos=<mm>` | Axis homed, resting just in front of its switch |
 | `EV home done t=<s>` | All requested axes homed |
 | `EV home aborted <axis>` | Homing stopped by `stop`, encoder or a fault |
 | `EV home failed <axis> home: <why>` | Switch not found / stays pressed; followed by FAULT |
 | `EV home <axis> lost (zero no longer valid)` | Zero discarded (driver disabled) |
+| `EV calib <axis> switch at <mm> mm (fast), approaching slowly` | Fast approach hit; slow approach follows |
+| `EV calib <axis> far switch at <mm> mm` | Front carriage reached its far switch |
+| `EV calib <axis> touches <axis> at <mm> mm (<axis> at <mm>) gap=<mm>` | Carriage touched the one in front; gap at home |
+| `EV calib reach <axis>=<mm> ...` | Furthest each carriage can physically go (far end + gaps), before margins |
+| `EV calib measured t=<s> front_max=<mm> gap1=<mm> gap2=<mm>` | All values measured |
+| `EV calib rejected <name>=<mm> expected <mm> (<dev> mm, lost steps?)` | Value too far from the profile value |
+| `EV calib stored` / `EV calib not stored (previous values kept)` | Result of the check |
+| `EV calib re-homing` | calib finished; automatic `home` follows (its EV home lines) |
+| `EV calib aborted (previous values kept)` | Stopped by `stop`, encoder or fault |
+| `EV calib failed calib <axis>: <why>` | Switch not found / implausible gap; followed by FAULT |
 
 ## Rules for changes
 - New keys may be added at the end of a reply; existing keys keep their meaning.

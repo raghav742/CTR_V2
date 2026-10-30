@@ -18,16 +18,16 @@ V1 values verified against the PCB schematic (Casper's report, Bijlage A) and hi
 
 | Pin | Name | Role | Axis |
 |---|---|---|---|
-| 38 | T1-home | Switch on the T1 carriage; presses against a fixed block near the front when T1 moves backward = home of T1-Tra | 1 |
+| 38 | T1-home | Switch on the back of the T1 carriage. Pressed by T1's fixed block (T1 moving backward = home of T1-Tra) **or** by T2 touching T1 (= front limit of T2) | 1 |
 | 39 | T1-far | On the frame at the front end: far-end safety stop of T1-Tra | 1 |
-| 40 | T2-home | Switch on the T2 carriage; presses against a fixed block further back = home of T2-Tra | 3 |
+| 40 | T2-home | Switch on the back of the T2 carriage. Pressed by T2's block (home of T2-Tra) **or** by T3 touching T2 (= front limit of T3) | 3 |
 | 41 | — | Wired on PCB, no switch on V1 | — |
-| 42 | T3-home | Switch on the T3 carriage; presses against a block at the back end = home of T3-Tra | 5 |
+| 42 | T3-home | Switch on the back of the T3 carriage; pressed by the block at the back end = home of T3-Tra | 5 |
 | 43 | — | Wired on PCB, no switch on V1 | — |
 
-Mounting confirmed on the robot (2026-10-30). Casper's notes said 38 and 40 also detect one
-carriage hitting the next; with this mounting they do not (each switch only touches its own
-block). Carriage-to-carriage protection is done in software (step 2.3).
+Mounting confirmed on the robot (2026-10-30). Switches 38 and 40 have two jobs: home of their
+own carriage, and contact with the carriage behind. The firmware cannot tell which one pressed
+them; homing one carriage at a time (D8) and the software limits (D9) handle this.
 
 ## Interface
 

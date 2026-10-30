@@ -123,6 +123,7 @@ bool moveGroup(const float amount[], uint8_t mask, float speedPct, float duratio
   if (!mask) { Out.println(F("ERR no axes")); return false; }
   for (uint8_t i = 0; i < N; i++)
     if ((mask & _BV(i)) && !axisOk(i, amount[i])) return false;
+  if (!safety::checkGroup(amount, mask)) return false;   // travel limits, carriages in front
 
   int8_t k = -1;
   for (uint8_t j = 0; j < N; j++) if (!groups[j].active) { k = j; break; }

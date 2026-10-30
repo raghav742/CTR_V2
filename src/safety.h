@@ -18,6 +18,7 @@ void update();           // every loop pass (feeds the watchdog)
 
 // Pre-move check for one axis; prints "ERR ..." and returns false if refused
 bool checkMove(uint8_t axis, float amount);
+bool checkGroup(const float amount[], uint8_t mask);   // travel limits for the whole move
 
 // Homing (phase 2) marks the switch it is looking for as expected
 void expectSwitch(int8_t switchIdx, bool expected);
