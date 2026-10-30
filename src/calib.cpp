@@ -156,7 +156,7 @@ namespace {
 void begin() { running = false; }
 bool active() { return running; }
 
-bool start() {
+bool start(bool quiet) {
   if (running || homing::active()) { Out.println(F("ERR homing or calib already running")); return false; }
   if (motion::anyBusy())            { Out.println(F("ERR stop motion first")); return false; }
   for (uint8_t k = 0; k < C; k++)
@@ -195,7 +195,7 @@ bool start() {
   add(MOVETO, front, all, -1, 0, motion_cfg::CALIB_REST_MM, -1);   // all back together
 
   if (!sys::request(sys::State::Homing)) return false;
-  Out.println(F("OK calib"));
+  if (!quiet) Out.println(F("OK calib"));
   running = true;
   cur = 0;
   startMs = millis();

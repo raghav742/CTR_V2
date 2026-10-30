@@ -542,6 +542,57 @@ ignored (profile values, rotation unknown). A stored calib result is used only i
 within 5 mm of the profile values. Writes happen only on calib, park and the first rotation
 move after a park. Commands: `settings` (show), `forget` (erase the stored calib result).
 
+## 9d. Display, screens and buzzer (Step 3.1, decision D11)
+
+### Why the display needs care
+The OLED (128x64, SSD1306, I2C 0x3C) keeps a 1 KB frame in the Arduino's RAM. The Adafruit
+library draws into it pixel by pixel and sends it in one go with `display()`. Measured in
+the simulator: ~21 ms per status frame at rest, up to ~69 ms with all axes at full speed,
+during which the loop (and the safety checks) would wait.
+
+### Three measures
+1. **Send in pieces** (`display.cpp`): `commit()` sets the address window to the whole
+   screen; then `display::update()` sends 16 bytes per loop pass (64 passes per frame,
+   ~0.15–0.5 ms each). `ready()` says when the previous frame is out; screens only draw then,
+   so the frame being sent is never changed half-way.
+2. **Draw byte-wise** (`fastgfx.cpp`): the display memory holds 8 vertical pixels per byte
+   ("page"). A 5x7 character is 5 column bytes from the Adafruit font table (`glcdfont.c`);
+   at a y that is not a multiple of 8 each column is split over two pages with a shift. Fills
+   use byte masks. About 50x faster than Adafruit's `print()`.
+3. **Draw in parts** (`ui.cpp`): the status screen is drawn in 5 parts (title, three tube
+   rows, bottom line), one per loop pass, then committed. Longest part under full load 2.7 ms.
+
+### Screens (`ui.cpp`)
+- **Splash** (Casper's design: frame, three-ring logo, "CTR V2", subtitle, progress bar):
+  drawn once with Adafruit GFX in `setup()`, afterwards only the bar grows; 2 s.
+- **Status**: title bar with the state on the right; per tube translation (mm) and rotation
+  (deg), `?` = no zero, `*` = moving; bottom line: fault reason, "Not homed" or firmware.
+  Redrawn 5x per second.
+The yellow top band of the two-colour OLED (rows 0–15) is used for the title, as in V1.
+
+### Menu and screen manager (Step 3.2, `ui.cpp`)
+Screens: Splash, Status, Menu, Service, Progress, Message, Error. Each screen has a
+`draw...(part)` function drawn one part per loop pass; menus redraw on input (and once a
+second for the state tag), live screens 5x per second.
+```
+MAIN MENU: Demo | Jog | Home | Status | Service
+SERVICE:   Calibrate limits | Zero rotations | Park | Driver scan | Sound on/off | < Back
+```
+**Encoder** (`main.cpp: handleEvents`): turn -> `ui::onTurn`; press while `ui::motionActive()`
+(a move, homing, calib or park) -> `safety::userStop` at once; otherwise the press is armed
+and on release becomes `ui::onSelect`; a long press (1 s) becomes `ui::onBack` instead.
+**The UI follows the robot** (`followRobot`): FAULT -> Error screen (short press = `ack`);
+homing / calib / park running (also from the console) -> Progress screen, then a short result
+notice; 2 min without input in a menu -> Status screen.
+**Protocol:** actions started from the menu print `EV ui ...` lines; the quiet variants of
+`homing::start`, `calib::start`, `rotzero::setZero` and `rotzero::park` suppress `OK` lines,
+which stay reserved for replies to console commands.
+
+### Buzzer (`buzzer.cpp`)
+Casper's melodies (click, beep, ok, boot, error, home) as note tables in flash, played with
+`tone()` (Timer2; Timer1 is the step interrupt) and advanced by `buzzer::update()`. The buzzer
+watches the state machine itself: FAULT -> error melody, HOMING -> READY -> home melody.
+
 ## 10. Development and test method
 
 - Each step: design explained -> code -> compiled -> simulator (where possible) -> robot test
@@ -554,7 +605,7 @@ move after a park. Commands: `settings` (show), `forget` (erase the stored calib
 - **Runtime diagnostic commands** (`chop`, `ms`, `cur`) allow testing driver settings
   without reflashing; this is how the StealthChop slip was diagnosed in minutes.
 
-## 11. Console commands (firmware 2.5.0)
+## 11. Console commands (firmware 3.2.0)
 ```
 help  status  state  ack  safety  wdtest  inputs  watch on|off  led g|b|c|r|off [slow|fast]
 drivers  move <1-6> <amount> [speed]  mv <axis>=<amount> ... [t=<s>] [v=<%>]

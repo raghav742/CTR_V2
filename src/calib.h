@@ -19,6 +19,6 @@
 namespace calib {
 void begin();
 void update();     // call every loop pass
-bool start();
+bool start(bool quiet = false);   // quiet: no "OK" line (started from the menu)
 bool active();
 }  // namespace calib

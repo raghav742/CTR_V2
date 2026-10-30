@@ -99,6 +99,7 @@ the order of `info`. Units: translation mm and mm/s; rotation degrees and rpm.
 | `EV settings none stored (using profile values)` | EEPROM empty or invalid at startup |
 | `EV rotation zero restored (robot was parked)` / `EV rotation zero unknown ...` | Startup: rotation zeros |
 | `EV park done: safe to power off ...` / `EV park aborted` | Result of `park` |
+| `EV ui home` / `EV ui calib` / `EV ui park` / `EV zero set <axes>` | Action started from the display menu |
 | `EV calib re-homing` | calib finished; automatic `home` follows (its EV home lines) |
 | `EV calib aborted (previous values kept)` | Stopped by `stop`, encoder or fault |
 | `EV calib failed calib <axis>: <why>` | Switch not found / implausible gap; followed by FAULT |

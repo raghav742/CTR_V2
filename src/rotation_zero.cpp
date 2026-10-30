@@ -37,7 +37,7 @@ void begin() {
 bool referenced(uint8_t i) { return i < N && isRot(i) && ref[i]; }
 bool parking() { return parkRunning; }
 
-bool setZero(int8_t only) {
+bool setZero(int8_t only, bool quiet) {
   bool any = false;
   for (uint8_t i = 0; i < N; i++) {
     if (!isRot(i) || (only >= 0 && only != i)) continue;
@@ -47,14 +47,14 @@ bool setZero(int8_t only) {
     any = true;
   }
   if (!any) { Out.println(F("ERR usage: zero <1|3|5|all> (rotation axes)")); return false; }
-  Out.print(F("OK zero"));
+  Out.print(quiet ? F("EV zero set") : F("OK zero"));
   for (uint8_t i = 0; i < N; i++)
     if (isRot(i) && (only < 0 || only == i)) { Out.print(' '); Out.print(hw::AXES[i].name); }
   Out.println();
   return true;
 }
 
-bool park() {
+bool park(bool quiet) {
   if (parkRunning)       { Out.println(F("ERR park already running")); return false; }
   if (motion::anyBusy()) { Out.println(F("ERR stop motion first")); return false; }
 
@@ -74,7 +74,7 @@ bool park() {
     if (isRot(i) && !ref[i]) { Out.print(F("EV park ")); Out.print(hw::AXES[i].name); Out.println(F(" has no zero: not parked")); }
 
   // one coordinated move: carriages stay in proportion (limits checked as usual)
-  if (!motion::moveGroup(amount, parkMask, motion_cfg::PARK_SPEED_PCT)) return false;
+  if (!motion::moveGroup(amount, parkMask, motion_cfg::PARK_SPEED_PCT, 0, 0, quiet)) return false;
   parkRunning = true;
   stopsAtStart = motion::stopCount();
   return true;

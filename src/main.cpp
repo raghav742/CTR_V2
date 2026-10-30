@@ -21,24 +21,45 @@
 #include "limits.h"
 #include "settings.h"
 #include "rotation_zero.h"
+#include "display.h"
+#include "buzzer.h"
+#include "ui.h"
 #include "serial_io.h"
 
 // Handle input events once per pass.
-//   encoder press during motion -> stop (no fault)
-//   encoder long press (1 s) in FAULT -> acknowledge
+//   encoder turn                    -> UI (menu selection)
+//   press while anything moves      -> STOP at once (press edge, no fault)
+//   short press otherwise           -> UI select (on release, so a long press
+//                                      never also selects)
+//   long press (1 s)                -> UI back; on the error screen: confirm
 // With "watch on", events are also printed (test aid).
+static bool pressArmed = false;   // press started while idle: select on release
+
 static void handleEvents() {
   const bool w = console::watching();
   int16_t d = encoder::takeDelta();
-  if (w && d) { Out.print(F("EV enc ")); Out.println(d); }
+  if (d) {
+    if (w) { Out.print(F("EV enc ")); Out.println(d); }
+    ui::onTurn(d);
+  }
   if (encoder::takePress()) {
     if (w) Out.println(F("EV btn press"));
-    safety::userStop(F("encoder button"), encoder::pressEdgeUs());
+    if (ui::motionActive()) {
+      safety::userStop(F("encoder button"), encoder::pressEdgeUs());
+      pressArmed = false;
+    } else {
+      pressArmed = true;
+    }
   }
-  if (encoder::takeRelease()   && w) Out.println(F("EV btn release"));
   if (encoder::takeLongPress()) {
     if (w) Out.println(F("EV btn long"));
-    if (sys::get() == sys::State::Fault) sys::acknowledge();
+    if (pressArmed) ui::onBack();
+    pressArmed = false;
+  }
+  if (encoder::takeRelease()) {
+    if (w) Out.println(F("EV btn release"));
+    if (pressArmed) ui::onSelect();
+    pressArmed = false;
   }
   for (uint8_t i = 0; i < hw::NUM_SWITCHES; i++) {
     if (limit_switches::changed(i) && w) {
@@ -64,10 +85,14 @@ void setup() {
   settings::begin();          // EEPROM: before limits and rotation zero
   limits::begin();
   rotzero::begin();
+  buzzer::begin();
+  bool oled = display::begin();
+  ui::begin();
 
   Out.print(F("CTR V2 firmware ")); Out.print(FW_VERSION);
   Out.print(F(" | profile: ")); Out.println(hw::PROFILE_NAME);
   drivers::report();
+  Out.println(oled ? F("Display: OLED found") : F("Display: not found (check I2C SDA 20 / SCL 21)"));
   Out.println(F("Type 'help' for commands."));
   safety::armWatchdog();      // last: from here the loop must keep running
 }
@@ -80,6 +105,9 @@ void loop() {
   homing::update();           // right after the switches: stop on the edge this pass
   calib::update();
   rotzero::update();
+  buzzer::update();
+  display::update();          // sends one small piece of the current frame
+  ui::update();
   status_led::update();
   motion::update();
   sys::update();

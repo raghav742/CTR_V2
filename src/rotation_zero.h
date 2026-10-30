@@ -16,7 +16,7 @@ namespace rotzero {
 void begin();                    // after settings::begin()
 void update();                   // call every loop pass
 bool referenced(uint8_t axis);   // rotation axis has a valid zero
-bool setZero(int8_t axis);       // -1 = all rotation axes
-bool park();
+bool setZero(int8_t axis, bool quiet = false);   // -1 = all rotation axes
+bool park(bool quiet = false);                   // quiet: no OK lines (menu)
 bool parking();
 }  // namespace rotzero
