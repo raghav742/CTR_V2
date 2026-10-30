@@ -21,6 +21,7 @@ bool checkMove(uint8_t axis, float amount);
 
 // Homing (phase 2) marks the switch it is looking for as expected
 void expectSwitch(int8_t switchIdx, bool expected);
+void setHomingMove(bool on);    // homing's own moves: allowed while HOMING, no 50 mm cap
 
 // Stop requested by a person; edgeUs = micros() of the input edge
 void userStop(const __FlashStringHelper* source, uint32_t edgeUs);

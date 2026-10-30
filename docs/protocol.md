@@ -46,24 +46,25 @@ wait for the `OK`/`ERR` line with its id, ignoring everything else in between.
 |---|---|
 | `info` | `OK info proto=1 fw=1.6.0 profile="..." axes=T1-Rot:deg,T1-Tra:mm,... switches=T1-home,...` |
 | `ping` | `OK pong` (link check; basis of the heartbeat in step 4.4) |
-| `st` | `OK t=<ms> state=<STATE> busy=<6 x 0/1> pos=<p1>,...,<p6>` |
+| `st` | `OK t=<ms> state=<STATE> busy=<6 x 0/1> pos=<p1>,...,<p6> homed=<6 x 0/1>` |
 | `stream <ms>` / `stream off` / `stream` | Start (20–10000 ms), stop, or show the status stream |
 | `status` | firmware, profile, state, loops/s, maxloop_us, isr_max_us, uptime_s, st_skipped |
 
 Status line (stream):
 ```
-ST t=1249 state=READY busy=110000 pos=157.95,13.17,0.00,0.00,0.00,0.00
+ST t=1249 state=READY busy=110000 pos=157.95,13.17,0.00,0.00,0.00,0.00 homed=010101
 ```
 - `t` milliseconds since start (for plotting, and to detect a restart).
 - `busy` one digit per axis in axis order, 1 = moving.
 - `pos` positions in axis order, in the units from `info` (mm or degrees, 2 decimals).
+- `homed` one digit per axis, 1 = position is measured from a real zero (fw 2.1+).
 
 If the USB send buffer does not have room for a whole `ST` line, that line is skipped
 (and counted in `st_skipped`) instead of making the robot wait. A program must therefore
 not assume every period produces a line; use `t`.
 
 ## All commands
-See `help` on the robot, or `docs/architecture.md` section 10. Axes are numbered 1–6 in
+See `help` on the robot, or `docs/architecture.md` section 11. Axes are numbered 1–6 in
 the order of `info`. Units: translation mm and mm/s; rotation degrees and rpm.
 
 ## Events
@@ -76,6 +77,14 @@ the order of `info`. Units: translation mm and mm/s; rotation degrees and rpm.
 | `EV stop <reason>` | All motion stopped (command, encoder button, ...) |
 | `EV reaction_ms=<ms>` | Time from the stop input to motors stopped |
 | `EV enc`, `EV btn`, `EV switch` | Input events (only with `watch on`) |
+| `EV home <axis> start` | Homing of one axis begins |
+| `EV home <axis> zero set (was at <mm> mm)` | Switch found; position set to 0 (old counted position shown) |
+| `EV home <axis> switch released at <mm> mm` | Where the switch lets go when moving forward again |
+| `EV home <axis> ok pos=<mm>` | Axis homed, resting just in front of its switch |
+| `EV home done t=<s>` | All requested axes homed |
+| `EV home aborted <axis>` | Homing stopped by `stop`, encoder or a fault |
+| `EV home failed <axis> home: <why>` | Switch not found / stays pressed; followed by FAULT |
+| `EV home <axis> lost (zero no longer valid)` | Zero discarded (driver disabled) |
 
 ## Rules for changes
 - New keys may be added at the end of a reply; existing keys keep their meaning.

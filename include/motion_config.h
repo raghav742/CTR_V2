@@ -35,6 +35,16 @@ constexpr float TRA_MAX_MOVE_UNHOMED = 50.0f;   // mm
 // Ramp recalculation interval in the main loop
 constexpr uint16_t RAMP_UPDATE_US = 1000;
 
+// Homing (step 2.1)
+constexpr float HOME_SPEED      = 5.0f;    // mm/s while searching and clearing the switch
+constexpr float HOME_SEARCH_MM  = 210.0f;  // give up if the switch is not found (travel + margin)
+constexpr float HOME_CLEAR_MM   = 10.0f;   // max forward move to release a pressed switch
+constexpr float HOME_BACKOFF_MM = 1.0f;    // extra distance after the switch releases
+// Lowest position a homed translation axis may be sent to. At 0 the switch is
+// pressed (zero = the press point); it releases a little further forward
+// (printed by homing as "released at"). Must be above that release point.
+constexpr float TRA_SOFT_MIN_MM = 1.0f;
+
 // Driver health check (safety): one driver per interval, round-robin, so each
 // driver is checked every 6 x interval. One check = 2 UART reads = ~9 ms of
 // blocked loop (measured 2026-10-28, TMCStepper waits inside each read).

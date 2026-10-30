@@ -11,6 +11,7 @@
 #include "motion.h"
 #include "system_state.h"
 #include "safety.h"
+#include "homing.h"
 
 namespace console {
 namespace {
@@ -48,7 +49,8 @@ namespace {
     Out.println(F("  drivers           driver detection, current, microsteps"));
     Out.println(F("  move <1-6> <amount> [speed]   mm & mm/s (translation) or deg & rpm (rotation)"));
     Out.println(F("  mv <axis>=<amount> ... [t=<s>] [v=<%>]   coordinated move, all finish together"));
-    Out.println(F("  stop              stop all motors"));
+    Out.println(F("  home [2|4|6]      home all translation axes (T3, T2, T1) or one"));
+    Out.println(F("  stop              stop all motors (also aborts homing)"));
     Out.println(F("  pos               positions of all axes"));
     Out.println(F("  en <1-6|all> / dis <1-6|all>  enable / disable motor drivers"));
     Out.println(F("  isr reset         reset the interrupt timing statistic"));
@@ -92,6 +94,13 @@ namespace {
     motion::moveGroup(amount, mask, pct, dur);
   }
 
+  void cmdHome(const char* a) {
+    if (!a) { homing::start(-1); return; }
+    int8_t i = parseAxis(a);
+    if (i < 0) { Out.println(F("ERR usage: home [2|4|6]")); return; }
+    homing::start(i);
+  }
+
   void cmdPos() {
     Out.print(F("OK"));
     for (uint8_t i = 0; i < hw::NUM_AXES; i++) {
@@ -105,12 +114,13 @@ namespace {
   void cmdEnable(const char* a, bool on) {
     if (a && !strcmp(a, "all")) {
       if (!on) motion::stopAll(F("drivers disabled"));
-      for (uint8_t i = 0; i < hw::NUM_AXES; i++) drivers::enable(i, on);
+      for (uint8_t i = 0; i < hw::NUM_AXES; i++) { drivers::enable(i, on); if (!on) homing::invalidate(i); }
     } else {
       int8_t i = parseAxis(a);
       if (i < 0) { Out.println(F("ERR usage: en|dis <1-6|all>")); return; }
       if (!on && motion::busy(i)) motion::stopAll(F("driver disabled"));
       drivers::enable(i, on);
+      if (!on) homing::invalidate(i);   // carriage may be moved by hand
     }
     Out.println(on ? F("OK enabled") : F("OK disabled"));
   }
@@ -220,6 +230,7 @@ namespace {
 
   // The fields shared by "st" (reply) and the stream (ST lines):
   //   t=<ms since start> state=<STATE> busy=<one 0/1 per axis> pos=<a1>,..,<a6>
+  //   homed=<one 0/1 per axis> (step 2.1; rotation axes stay 0 until step 2.4)
   void printStatusFields() {
     Out.print(F("t="));       Out.print(millis());
     Out.print(F(" state="));  Out.print(sys::name(sys::get()));
@@ -230,6 +241,8 @@ namespace {
       if (i) Out.print(',');
       Out.print(motion::position(i), 2);
     }
+    Out.print(F(" homed="));
+    for (uint8_t i = 0; i < hw::NUM_AXES; i++) Out.print(homing::axisHomed(i) ? '1' : '0');
     Out.println();
   }
 
@@ -287,6 +300,7 @@ namespace {
     else if (!strcmp(argv[0], "drivers")) drivers::report();
     else if (!strcmp(argv[0], "move"))   cmdMove(argv[1], argv[2], argv[3]);
     else if (!strcmp(argv[0], "mv"))     cmdMv(argc, argv);
+    else if (!strcmp(argv[0], "home"))   cmdHome(argv[1]);
     else if (!strcmp(argv[0], "stop"))   { safety::userStop(F("command"), micros()); Out.println(F("OK stop")); }
     else if (!strcmp(argv[0], "safety")) safety::report();
     else if (!strcmp(argv[0], "wdtest")) safety::watchdogTest();
@@ -305,12 +319,21 @@ void begin() { len = 0; overflow = false; }
 
 void update() {
   // Handle at most what has already arrived; never wait for more.
+  // Terminal keys: arrow/Delete/Home keys arrive as escape sequences
+  // (ESC [ C, ESC [ 3 ~ ...) and are ignored; Backspace removes a character.
+  static uint8_t esc = 0;            // 0 normal, 1 after ESC, 2 inside sequence
   while (Serial.available()) {
     char c = Serial.read();
+    if (esc == 1) { esc = (c == '[' || c == 'O') ? 2 : 0; continue; }
+    if (esc == 2) { if (c >= 0x40 && c <= 0x7E) esc = 0; continue; }
+    if (c == 0x1B) { esc = 1; continue; }
+    if (c == 0x08 || c == 0x7F) { if (len) len--; continue; }
     if (c == '\r' || c == '\n') {
       if (overflow)   Out.println(F("ERR line too long"));
       else if (len)   { line[len] = '\0'; execute(line); }
       len = 0; overflow = false;
+    } else if ((uint8_t)c < 0x20 && c != '\t') {
+      // other control characters: ignore
     } else if (len < LINE_MAX - 1) {
       line[len++] = c;
     } else {

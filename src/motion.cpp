@@ -33,10 +33,12 @@ namespace {
     float    vpMin;       // start/stop progress speed
     float    ap;          // progress acceleration (1/s^2)
     uint32_t startMs;
+    bool     quiet;       // internal move (homing): no OK / EV lines
   };
   Group    groups[N];               // at most one group per axis
   int8_t   axisGroup[N];            // group of each axis, -1 = idle
   uint32_t lastRampUs = 0;
+  uint32_t stops = 0;               // number of stopAll() calls (user stop, fault)
 
   bool isTra(uint8_t i) { return hw::AXES[i].type == AxisType::Translation; }
 
@@ -71,7 +73,7 @@ namespace {
   void finishGroup(uint8_t k, bool stopped) {
     Group& g = groups[k];
     if (!g.active) return;
-    printDone(g, stopped);
+    if (!g.quiet) printDone(g, stopped);
     for (uint8_t i = 0; i < N; i++) if (g.mask & _BV(i)) axisGroup[i] = -1;
     g.active = false;
   }
@@ -111,7 +113,7 @@ bool anyBusy() {
 //  duration:  > 0 = take exactly this many seconds (if possible)
 //  singleSpeed: user speed for a single-axis move (0 = ignore)
 // ------------------------------------------------------------
-bool moveGroup(const float amount[], uint8_t mask, float speedPct, float duration, float singleSpeed) {
+bool moveGroup(const float amount[], uint8_t mask, float speedPct, float duration, float singleSpeed, bool quiet) {
   if (!sys::motionAllowed()) {
     Out.print(F("ERR not allowed in state ")); Out.print(sys::name(sys::get()));
     if (sys::get() == sys::State::Fault) { Out.print(F(": ")); Out.print(sys::faultReason()); Out.print(F(" (ack first)")); }
@@ -167,6 +169,7 @@ bool moveGroup(const float amount[], uint8_t mask, float speedPct, float duratio
   for (uint8_t i = 0; i < N; i++) g.k[i] = g.d[i] * steppers::INC_PER_SPS;
   g.vp    = g.vpMin;
   g.startMs = millis();
+  g.quiet   = quiet;
   g.active  = true;
 
   for (uint8_t i = 0; i < N; i++) {
@@ -176,6 +179,7 @@ bool moveGroup(const float amount[], uint8_t mask, float speedPct, float duratio
     steppers::start(i, target[i]);
   }
 
+  if (quiet) return true;
   Out.print(F("OK mv"));
   for (uint8_t i = 0; i < N; i++) {
     if (!(g.mask & _BV(i))) continue;
@@ -186,19 +190,30 @@ bool moveGroup(const float amount[], uint8_t mask, float speedPct, float duratio
   return true;
 }
 
-bool moveRelative(uint8_t i, float amount, float speed) {
+bool moveRelative(uint8_t i, float amount, float speed, bool quiet) {
   if (i >= N) { Out.println(F("ERR axis 1..6")); return false; }
   float a[N] = { 0 };
   a[i] = amount;
   if (speed <= 0) speed = isTra(i) ? motion_cfg::TRA_SPEED_DEFAULT : motion_cfg::ROT_SPEED_DEFAULT;
-  return moveGroup(a, _BV(i), 100, 0, speed);
+  return moveGroup(a, _BV(i), 100, 0, speed, quiet);
 }
 
 void stopAll(const __FlashStringHelper* reason) {
   bool any = anyBusy();
+  stops++;
   steppers::stopAll();
   for (uint8_t k = 0; k < N; k++) finishGroup(k, true);
   if (any) { Out.print(F("EV stop ")); Out.println(reason); }
+}
+
+uint32_t stopCount() { return stops; }
+
+// Stop only the move that 'axis' belongs to (used by homing on its switch).
+void stopGroupOf(uint8_t axis) {
+  if (axis >= N || axisGroup[axis] < 0) return;
+  uint8_t k = axisGroup[axis];
+  for (uint8_t i = 0; i < N; i++) if (groups[k].mask & _BV(i)) steppers::stop(i);
+  finishGroup(k, true);
 }
 
 // ------------------------------------------------------------

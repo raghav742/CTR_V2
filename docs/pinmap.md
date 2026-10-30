@@ -18,12 +18,16 @@ V1 values verified against the PCB schematic (Casper's report, Bijlage A) and hi
 
 | Pin | Name | Role | Axis |
 |---|---|---|---|
-| 38 | T1-home | Home of T1-Tra; also detects T2 hitting T1 | 1 |
-| 39 | T1-far | Far-end safety stop of T1-Tra | 1 |
-| 40 | T2-home | Home of T2-Tra; also detects T3 hitting T2 | 3 |
+| 38 | T1-home | Switch on the T1 carriage; presses against a fixed block near the front when T1 moves backward = home of T1-Tra | 1 |
+| 39 | T1-far | On the frame at the front end: far-end safety stop of T1-Tra | 1 |
+| 40 | T2-home | Switch on the T2 carriage; presses against a fixed block further back = home of T2-Tra | 3 |
 | 41 | — | Wired on PCB, no switch on V1 | — |
-| 42 | T3-home | Home of T3-Tra | 5 |
+| 42 | T3-home | Switch on the T3 carriage; presses against a block at the back end = home of T3-Tra | 5 |
 | 43 | — | Wired on PCB, no switch on V1 | — |
+
+Mounting confirmed on the robot (2026-10-30). Casper's notes said 38 and 40 also detect one
+carriage hitting the next; with this mounting they do not (each switch only touches its own
+block). Carriage-to-carriage protection is done in software (step 2.3).
 
 ## Interface
 

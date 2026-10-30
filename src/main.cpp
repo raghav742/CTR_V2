@@ -16,6 +16,7 @@
 #include "motion.h"
 #include "system_state.h"
 #include "safety.h"
+#include "homing.h"
 #include "serial_io.h"
 
 // Handle input events once per pass.
@@ -54,6 +55,7 @@ void setup() {
   drivers::begin();
   steppers::begin();
   motion::begin();
+  homing::begin();
 
   Out.print(F("CTR V2 firmware ")); Out.print(FW_VERSION);
   Out.print(F(" | profile: ")); Out.println(hw::PROFILE_NAME);
@@ -67,6 +69,7 @@ void loop() {
   safety::update();
   encoder::update();
   limit_switches::update();
+  homing::update();           // right after the switches: stop on the edge this pass
   status_led::update();
   motion::update();
   sys::update();

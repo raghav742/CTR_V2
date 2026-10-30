@@ -38,6 +38,14 @@ constexpr SwitchConfig SWITCHES[NUM_SWITCHES] = {
   { "T3-home",    42, SwitchRole::Home,    5,   true },
 };
 
+// Homing (step 2.1). Each carriage carries its own switch, which presses
+// against a fixed block on the frame when the carriage moves backward
+// (negative mm). Blocks are staggered: T3 at the back end, T2 further forward,
+// T1 near the front. Order: back carriage first, so each carriage has the most
+// room behind it when it moves backward.
+constexpr uint8_t NUM_HOMED_AXES = 3;
+constexpr uint8_t HOME_ORDER[NUM_HOMED_AXES] = { 5, 3, 1 };   // T3-Tra, T2-Tra, T1-Tra
+
 // --- Mechanics ----------------------------------------------
 constexpr uint16_t FULLSTEPS_PER_REV = 200;     // 1.8 deg motors
 constexpr float    LEAD_MM           = 2.0f;    // lead screw: 0.01 mm per full step (Nanotec)

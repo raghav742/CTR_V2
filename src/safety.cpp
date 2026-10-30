@@ -7,6 +7,7 @@
 #include "drivers.h"
 #include "motion.h"
 #include "system_state.h"
+#include "homing.h"
 
 // Survive a reset (not cleared by startup code): lets us tell after a
 // restart that the watchdog fired.
@@ -20,6 +21,7 @@ namespace {
   uint32_t lastDrvCheck = 0;
   uint8_t  drvAxis = 0;
   uint32_t lastReactionUs = 0;
+  bool     homingMove = false;
   enum Cause : uint8_t { C_UNKNOWN, C_WATCHDOG, C_BROWNOUT, C_EXTERNAL, C_POWERON };
   uint8_t  resetCause = C_UNKNOWN;
 
@@ -72,12 +74,22 @@ bool checkMove(uint8_t i, float amount) {
   const char* name = hw::AXES[i].name;
   if (!drivers::present(i)) { Out.print(F("ERR ")); Out.print(name); Out.println(F(" driver not found")); return false; }
   if (!drivers::enabled(i)) { Out.print(F("ERR ")); Out.print(name); Out.println(F(" disabled")); return false; }
+  // While homing, only homing itself may move anything
+  if (sys::get() == sys::State::Homing && !homingMove) { Out.println(F("ERR homing in progress")); return false; }
   if (!isTra(i)) return true;
 
-  // Until homing exists, positions are only counted steps
-  if (!sys::homed() && fabsf(amount) > motion_cfg::TRA_MAX_MOVE_UNHOMED) {
-    Out.print(F("ERR translation moves limited to "));
-    Out.print(motion_cfg::TRA_MAX_MOVE_UNHOMED, 0); Out.println(F(" mm until homed"));
+  // Without a zero, positions are only counted steps: keep single moves short
+  if (!homingMove && !homing::axisHomed(i) && fabsf(amount) > motion_cfg::TRA_MAX_MOVE_UNHOMED) {
+    Out.print(F("ERR ")); Out.print(name); Out.print(F(" not homed: moves limited to "));
+    Out.print(motion_cfg::TRA_MAX_MOVE_UNHOMED, 0); Out.println(F(" mm"));
+    return false;
+  }
+  // Homed: never below the soft minimum (the block is just behind zero)
+  if (!homingMove && homing::axisHomed(i) && amount < 0 &&
+      motion::position(i) + amount < motion_cfg::TRA_SOFT_MIN_MM - 0.005f) {
+    Out.print(F("ERR ")); Out.print(name); Out.print(F(" below minimum ("));
+    Out.print(motion_cfg::TRA_SOFT_MIN_MM, 1); Out.print(F(" mm), largest allowed move "));
+    Out.print(motion_cfg::TRA_SOFT_MIN_MM - motion::position(i), 2); Out.println(F(" mm"));
     return false;
   }
   // No moving further into a switch that is already pressed
@@ -88,6 +100,8 @@ bool checkMove(uint8_t i, float amount) {
     Out.print(F("ERR ")); Out.print(name); Out.println(F(" far-end switch pressed")); return false; }
   return true;
 }
+
+void setHomingMove(bool on) { homingMove = on; }
 
 void expectSwitch(int8_t s, bool expected) {
   if (s >= 0 && s < (int8_t)hw::NUM_SWITCHES) swExpected[s] = expected;

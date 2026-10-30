@@ -15,14 +15,16 @@ void  update();                                   // call every loop pass
 
 // amount: mm (translation) or degrees (rotation)
 // speed:  mm/s (translation) or rpm (rotation); 0 = default
-bool  moveRelative(uint8_t axis, float amount, float speed = 0);
+bool  moveRelative(uint8_t axis, float amount, float speed = 0, bool quiet = false);
 
 // Coordinated move: all axes in 'mask' start and finish together.
 // amount[i] relative (mm or deg); speedPct of the fastest allowed;
 // duration > 0 = take exactly that many seconds; singleSpeed: see .cpp
 bool  moveGroup(const float amount[], uint8_t mask, float speedPct = 100,
-                float duration = 0, float singleSpeed = 0);
+                float duration = 0, float singleSpeed = 0, bool quiet = false);
 void  stopAll(const __FlashStringHelper* reason);
+void  stopGroupOf(uint8_t axis);                  // stop just the move this axis is in
+uint32_t stopCount();                             // +1 on every stopAll (lets homing see a stop)
 bool  busy(uint8_t axis);
 bool  anyBusy();
 

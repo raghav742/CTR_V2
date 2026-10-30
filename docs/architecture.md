@@ -37,7 +37,7 @@ CTRV2.0/
 ├─ include/            descriptions and settings (no logic)
 │   ├─ hw_types.h        data types: what an axis or a switch is
 │   ├─ hw_profile.h      selects v1 or v2 profile from the build environment
-│   ├─ hw_profile_v1.h   V1 robot: pins, currents, switches, mechanics, interface
+│   ├─ hw_profile_v1.h   V1 robot: pins, currents, switches, homing order, mechanics, interface
 │   ├─ hw_profile_v2.h   V2 robot (filled in at Phase 5)
 │   ├─ motion_config.h   tuning: speeds, accelerations, chopper modes
 │   └─ version.h         firmware version, protocol version, console baud rate
@@ -385,7 +385,60 @@ loop work runs slower). Per axis it did speed x distance, x scale, float-to-inte
 millisecond. Now `k[i] = distance x scale` is computed once when the move starts and
 `steppers::setIncrement()` takes the integer directly: one multiply per axis. 1.0 -> 0.74 ms.
 
-## 9. Development and test method
+## 9. Homing (Step 2.1, decision D8)
+
+### The mechanics
+```
+ BACK                                                            FRONT
+ |[T3 blk]                 [T2 blk]           [T1 blk]         [far sw]|
+ |   <-sw T3 carriage   <-sw T2 carriage   <-sw T1 carriage     (39)   |
+ |      (42)               (40)               (38)                     |
+   <-- negative mm = backward = homing          positive mm = forward -->
+```
+Each translation carriage carries its own switch. Moving backward, the switch presses
+against a fixed block on the frame. So each carriage's zero is fixed to the frame and
+does not depend on where the other carriages are.
+
+### The procedure (`homing.cpp`)
+`home` homes T3, then T2, then T1 (`HOME_ORDER` in the hardware profile: back carriage
+first, so every carriage moves backward into space the one behind it has already left).
+For each axis:
+1. **Clear** — if the switch is already pressed (T3 usually rests on its block), move
+   forward until it releases, then 1 mm further.
+2. **Seek** — move backward at 5 mm/s (up to 210 mm). The switch is marked *expected* in
+   the safety manager, so pressing it is not a fault.
+3. **Zero** — the pass in which the debounced switch reads pressed, the move is stopped
+   and the step counter set to 0. Debounce (5 ms) at 5 mm/s = 0.025 mm.
+4. **Clear** again — forward until the switch releases (`switch released at`), +1 mm.
+5. The axis is marked homed; the next axis starts. After the last one: READY.
+
+It is a small state machine (`Phase`: Clear, Extra, Seek) advanced by `homing::update()`
+every loop pass, right after `limit_switches::update()` so a switch edge stops the move in
+the same pass. Nothing waits, so the safety manager, the encoder and the console keep working.
+
+### How homing fits the other modules
+- **State machine:** `home` requests HOMING (allowed from IDLE and READY). The end result is
+  READY if all three axes are homed, IDLE if only some are (`home 4` alone).
+- **Safety:** homing's own moves set `safety::setHomingMove(true)`: they may exceed the
+  50 mm "not homed" limit, and they are the only moves allowed while HOMING. Any switch
+  other than the expected one still causes a FAULT.
+- **Aborting:** every `motion::stopAll()` (command `stop`, encoder press, fault) increments
+  `motion::stopCount()`. Homing remembers the count when it starts; if it changes, homing
+  aborts (`EV home aborted`) and returns to IDLE (unless already in FAULT).
+- **Quiet moves:** homing calls `motion::moveRelative(..., quiet=true)`, which suppresses
+  the `OK mv` and `EV done` lines, because an `OK` line must only ever answer a command.
+  `motion::stopGroupOf(axis)` stops just homing's move when the switch is found.
+- **Failure:** switch not found within 210 mm, or a switch that does not release within
+  10 mm, means a hardware problem -> `EV home failed ...` and FAULT.
+
+### After homing
+- Per-axis homed flags (`homing::axisHomed(i)`, `homed=` in `st` and the stream).
+- The 50 mm single-move limit only applies to axes that are not homed.
+- A homed axis cannot be sent below `TRA_SOFT_MIN_MM` (1.0 mm): at 0 the switch is
+  pressed, and just behind it is the block. The upper limit follows in step 2.2.
+- Disabling a driver (`dis`) discards that axis' zero (the carriage could be moved by hand).
+
+## 10. Development and test method
 
 - Each step: design explained -> code -> compiled -> simulator (where possible) -> robot test
   with pass criteria -> devlog entry + git commit.
@@ -397,19 +450,21 @@ millisecond. Now `k[i] = distance x scale` is computed once when the move starts
 - **Runtime diagnostic commands** (`chop`, `ms`, `cur`) allow testing driver settings
   without reflashing; this is how the StealthChop slip was diagnosed in minutes.
 
-## 10. Console commands (firmware 1.6.0)
+## 11. Console commands (firmware 2.1.0)
 ```
 help  status  state  ack  safety  wdtest  inputs  watch on|off  led g|b|c|r|off [slow|fast]
 drivers  move <1-6> <amount> [speed]  mv <axis>=<amount> ... [t=<s>] [v=<%>]
-stop  pos  en <1-6|all>  dis <1-6|all>  isr reset
+stop  pos  en <1-6|all>  dis <1-6|all>  isr reset  home [2|4|6]
 info  ping  st  stream <ms>|off          (protocol, Step 1.6; prefix any command with #<id>)
 chop <1-6> stealth|spread|hybrid [speed]  ms <1-6> <2..32>  cur <1-6> <mA>
 ```
 Axes: 1 T1-Rot, 2 T1-Tra, 3 T2-Rot, 4 T2-Tra, 5 T3-Rot, 6 T3-Tra.
 Units: translation mm and mm/s; rotation degrees and rpm.
-Collision rule until Phase 2: moving forward, T2 approaches T1 and T3 approaches T2.
+Order front to back: T1, T2, T3. Moving forward, T2 approaches T1 and T3 approaches T2;
+moving backward, T1 approaches T2 and T2 approaches T3. No switch detects carriage contact
+(step 2.3 adds a software rule).
 
-## 11. Open items
+## 12. Open items
 - Longest loop pass on the robot is ~9 ms, caused by the driver health check (two blocking
   TMCStepper UART reads, ~4.5 ms each), not by printing. Accepted for the prototype and made
   rare: once per second (decision D7). A non-blocking UART reader would remove it.
@@ -418,5 +473,6 @@ Collision rule until Phase 2: moving forward, T2 approaches T1 and T3 approaches
 - With all six axes at maximum speed the step interrupt uses most of the CPU (simulator:
   ~900 loop passes/s). Fine for now; revisit if demos need all axes at full speed together.
 - Rotation axes have no zero reference yet (Step 2.4).
-- T1 rests about 19 mm from its far-end switch at power-on positions; real travel per
-  carriage to be measured during homing (Phase 2).
+- Travel per carriage (T1 to its far switch; T2 and T3 limited by the carriage in front)
+  to be measured in step 2.2. T1's stroke looks short (~20–30 mm).
+- Gaps between carriages when all are homed (G12, G23) to be measured for step 2.3.
