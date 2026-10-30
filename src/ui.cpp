@@ -14,6 +14,10 @@
 #include "limits.h"
 #include "motion_config.h"
 #include "demo.h"
+#include "record.h"
+#include "attract.h"
+#include "safety.h"
+#include "encoder.h"
 
 // ============================================================
 //  Screen manager (steps 3.1, 3.2)
@@ -39,7 +43,7 @@ namespace {
   constexpr uint8_t  ROWS          = 4;       // menu rows visible (y 16..63)
 
   enum class Screen : uint8_t { Splash, Status, Menu, Service, Progress, Message, Fault, JogSelect, Jog,
-                                DemoSelect, DemoRun };
+                                DemoSelect, DemoRun, Record, SafetyDemo };
   enum class Job    : uint8_t { None, Home, Calib, Park };
 
   Screen   screen = Screen::Splash;
@@ -49,9 +53,22 @@ namespace {
   Job      job = Job::None;                    // what the progress screen shows
 
   // Main menu
-  enum : uint8_t { M_DEMO, M_JOG, M_HOME, M_STATUS, M_SERVICE, M_COUNT };
+  enum : uint8_t { M_DEMO, M_JOG, M_RECORD, M_HOME, M_STATUS, M_SAFETY, M_SERVICE, M_COUNT };
+  // Visible main menu: everything, or the short visitor menu (step 3.7)
+  const uint8_t NORMAL_ITEMS[]  = { M_DEMO, M_JOG, M_RECORD, M_HOME, M_STATUS, M_SAFETY, M_SERVICE };
+  const uint8_t VISITOR_ITEMS[] = { M_DEMO, M_SAFETY, M_STATUS };
+  bool visitor = false;
+  constexpr uint32_t VISITOR_EXIT_MS = 5000;     // hold the knob this long to leave visitor mode
+  uint8_t mainCount() { return visitor ? sizeof(VISITOR_ITEMS) : sizeof(NORMAL_ITEMS); }
+  uint8_t mainId(uint8_t idx) { return visitor ? VISITOR_ITEMS[idx] : NORMAL_ITEMS[idx]; }
+  uint8_t mainIndexOf(uint8_t id) { for (uint8_t i = 0; i < mainCount(); i++) if (mainId(i) == id) return i; return 0; }
   // Service menu
-  enum : uint8_t { S_CALIB, S_ZERO, S_PARK, S_DRIVERS, S_SOUND, S_BACK, S_COUNT };
+  enum : uint8_t { S_CALIB, S_ZERO, S_PARK, S_DRIVERS, S_SOUND, S_ATTRACT, S_VISITOR, S_BACK, S_COUNT };
+  // Record list (step 3.6)
+  enum : uint8_t { R_ADD, R_PLAY, R_CLEAR, R_BACK, R_COUNT };
+  uint8_t recSel = 0, recTop = 0;
+  // Safety demo (step 3.7)
+  uint32_t safetyStops = 0;
   uint8_t mainSel = 0, mainTop = 0, svcSel = 0, svcTop = 0;
 
   // Jog (step 3.3): axis list (0..5 = axes, 6 = Back), then the jog screen
@@ -63,6 +80,7 @@ namespace {
   const float ROT_STEPS[3] = { 1.0f, 10.0f, 45.0f };  // deg per encoder click
   bool  isTra(uint8_t a) { return hw::AXES[a].type == AxisType::Translation; }
   uint8_t demoSel = 0, demoTop = 0;              // demo list (last item = Back)
+  bool attractWasRunning = false;
   uint8_t demoCount() { return demo::count() + 1; }
   float stepSize() { return isTra(jogAxis) ? TRA_STEPS[jogStep] : ROT_STEPS[jogStep]; }
 
@@ -141,6 +159,15 @@ namespace {
         g().drawLine(10, m, 12, m, col);
         break;
       }
+      case M_RECORD:                                     // record dot
+        g().drawCircle(8, cy0 + 5, 4, col);
+        g().fillCircle(8, cy0 + 5, 2, col);
+        break;
+      case M_SAFETY:                                     // warning triangle
+        g().drawTriangle(8, cy0, 3, cy0 + 10, 13, cy0 + 10, col);
+        g().drawLine(8, cy0 + 4, 8, cy0 + 7, col);
+        g().drawPixel(8, cy0 + 9, col);
+        break;
       case M_SERVICE:                                    // gear
         g().drawCircle(8, cy0 + 5, 3, col);
         g().drawPixel(8, cy0, col);  g().drawPixel(8, cy0 + 10, col);
@@ -155,6 +182,8 @@ namespace {
   const __FlashStringHelper* mainName(uint8_t i) {
     switch (i) {
       case M_DEMO:    return F("Demo");
+      case M_RECORD:  return F("Record");
+      case M_SAFETY:  return F("Safety demo");
       case M_JOG:     return F("Jog");
       case M_HOME:    return F("Home");
       case M_STATUS:  return F("Status");
@@ -168,10 +197,21 @@ namespace {
       case S_PARK:    return F("Park (power off)");
       case S_DRIVERS: return F("Driver scan");
       case S_SOUND:   return buzzer::muted() ? F("Sound: off") : F("Sound: on");
+      case S_ATTRACT: return attract::enabled() ? F("Attract: on") : F("Attract: off");
+      case S_VISITOR: return F("Visitor mode");
       default:        return F("< Back");
     }
   }
-  bool needsHome(uint8_t i) { return (i == M_DEMO || i == M_JOG) && !sys::homed(); }
+  bool needsHome(uint8_t i) { return (i == M_DEMO || i == M_JOG || i == M_RECORD) && !sys::homed(); }
+
+  void recName(uint8_t i, char* b) {
+    switch (i) {
+      case R_ADD:   snprintf_P(b, 20, PSTR("Add pose (%u/%u)"), record::count(), record::MAX_POSES); break;
+      case R_PLAY:  snprintf_P(b, 20, PSTR("Play (%u poses)"), record::count()); break;
+      case R_CLEAR: strcpy_P(b, PSTR("Clear all")); break;
+      default:      strcpy_P(b, PSTR("< Back")); break;
+    }
+  }
 
   // Jog list: "T1 rotation", "T1 translation", ... "< Back"
   void jogName(uint8_t i, char* b) {
@@ -179,11 +219,12 @@ namespace {
     snprintf_P(b, 20, isTra(i) ? PSTR("T%u translation") : PSTR("T%u rotation"), i / 2 + 1);
   }
 
-  enum List : uint8_t { L_MAIN, L_SERVICE, L_JOG, L_DEMO };
+  enum List : uint8_t { L_MAIN, L_SERVICE, L_JOG, L_DEMO, L_REC };
 
   // One menu row (row = 0..3 on screen); icons only in the main menu
   void menuRow(uint8_t row, uint8_t item, bool sel, uint8_t list, uint8_t count, uint8_t top) {
     const bool isMain = list == L_MAIN;
+    const uint8_t id = isMain ? mainId(item) : item;    // main menu: index -> item
     uint8_t y = 16 + ROW_H * row;
     if (sel) {
       fill(0, y, 127, y + ROW_H - 1, true);
@@ -191,11 +232,12 @@ namespace {
     }
     uint16_t col = sel ? SSD1306_BLACK : SSD1306_WHITE;
     uint8_t x = 4;
-    if (isMain) { icon(item, y + 1, col); x = 17; }
+    if (isMain) { icon(id, y + 1, col); x = 17; }
     if (list == L_JOG) { char b[20]; jogName(item, b); text(x, y + 2, b, sel); }
     else if (list == L_DEMO) text(x, y + 2, item < demo::count() ? demo::name(item) : F("< Back"), sel);
-    else text(x, y + 2, isMain ? mainName(item) : svcName(item), sel);
-    if (isMain && needsHome(item)) text(80, y + 2, F("(home)"), sel);
+    else if (list == L_REC) { char b[20]; recName(item, b); text(x, y + 2, b, sel); }
+    else text(x, y + 2, isMain ? mainName(id) : svcName(id), sel);
+    if (isMain && needsHome(id)) text(80, y + 2, F("(home)"), sel);
     // scroll hints: more items above / below
     if (row == 0 && top > 0)                text(118, y + 2, F("\x18"), sel);
     if (row == ROWS - 1 && top + ROWS < count) text(118, y + 2, F("\x19"), sel);
@@ -236,15 +278,18 @@ namespace {
     if (part == 0) {
       clear();
       title(list == L_MAIN ? F("MAIN MENU") : list == L_SERVICE ? F("SERVICE") :
-            list == L_JOG ? F("JOG: CHOOSE AXIS") : F("DEMO: CHOOSE"));
-      if (list == L_MAIN || list == L_SERVICE) titleTag(sys::name(sys::get()));
+            list == L_JOG ? F("JOG: CHOOSE AXIS") : list == L_DEMO ? F("DEMO: CHOOSE") : F("RECORD"));
+      if (list == L_MAIN) titleTag(visitor ? F("VISITOR") : sys::name(sys::get()));
+      if (list == L_SERVICE) titleTag(sys::name(sys::get()));
       return false;
     }
     uint8_t row = part - 1;
-    uint8_t count = list == L_MAIN ? (uint8_t)M_COUNT : list == L_SERVICE ? (uint8_t)S_COUNT :
-                    list == L_JOG ? J_COUNT : demoCount();
-    uint8_t top = list == L_MAIN ? mainTop : list == L_SERVICE ? svcTop : list == L_JOG ? jogTop : demoTop;
-    uint8_t sel = list == L_MAIN ? mainSel : list == L_SERVICE ? svcSel : list == L_JOG ? jogSel : demoSel;
+    uint8_t count = list == L_MAIN ? mainCount() : list == L_SERVICE ? (uint8_t)S_COUNT :
+                    list == L_JOG ? J_COUNT : list == L_DEMO ? demoCount() : (uint8_t)R_COUNT;
+    uint8_t top = list == L_MAIN ? mainTop : list == L_SERVICE ? svcTop : list == L_JOG ? jogTop :
+                  list == L_DEMO ? demoTop : recTop;
+    uint8_t sel = list == L_MAIN ? mainSel : list == L_SERVICE ? svcSel : list == L_JOG ? jogSel :
+                  list == L_DEMO ? demoSel : recSel;
     uint8_t item = top + row;
     if (item < count) menuRow(row, item, item == sel, list, count, top);
     return row == ROWS - 1;
@@ -254,7 +299,7 @@ namespace {
   bool drawDemoRun(uint8_t part) {
     if (part == 0) {
       clear();
-      title(F("DEMO RUNNING"));
+      title(attract::running() ? F("ATTRACT") : F("DEMO RUNNING"));
       titleTag(F("RUN"));
       uint8_t x = text(0, 13, demo::name(demo::program()));
       x = text(x, 13, F("  "));
@@ -266,8 +311,33 @@ namespace {
       return false;
     }
     if (part <= 3) { tubeRow(part - 1, 23 + 10 * (part - 1)); return false; }
-    footer(F("PUSH = STOP"));
+    footer(attract::running() ? F("TOUCH TO STOP") : F("PUSH = STOP"));
     return true;
+  }
+
+  // Safety demo: tubes turn slowly until a visitor presses the knob
+  bool drawSafetyDemo(uint8_t part) {
+    if (part == 0) {
+      clear();
+      title(F("SAFETY DEMO"));
+      return false;
+    }
+    text(4, 18, F("The robot is moving."));
+    text(4, 30, F("Press the knob to"));
+    text(4, 40, F("stop it at once!"));
+    footer(F("PRESS = STOP"));
+    return true;
+  }
+
+  void startSafetyDemo() {
+    float amount[hw::NUM_AXES] = { 0 };
+    uint8_t mask = 0;
+    for (uint8_t i = 0; i < hw::NUM_AXES; i++)
+      if (!isTra(i)) { amount[i] = (i % 4 == 0) ? 3600 : -3600; mask |= _BV(i); }   // 10 turns, alternating
+    safetyStops = motion::stopCount();
+    Out.println(F("EV ui safety demo"));
+    if (motion::moveGroup(amount, mask, 30, 0, 0, true)) go(Screen::SafetyDemo);
+    else message(F("NOT POSSIBLE"), F("See serial log"), nullptr);
   }
 
   // Jog screen: axis, large live position, current range, step size
@@ -403,6 +473,8 @@ namespace {
       case Screen::Jog:      return drawJog(part);
       case Screen::DemoSelect: return drawMenu(part, L_DEMO);
       case Screen::DemoRun:  return drawDemoRun(part);
+      case Screen::Record:   return drawMenu(part, L_REC);
+      case Screen::SafetyDemo: return drawSafetyDemo(part);
       case Screen::Progress: return drawProgress(part);
       case Screen::Message:  return drawMessage(part);
       case Screen::Fault:    return drawFault(part);
@@ -417,8 +489,11 @@ namespace {
   }
 
   void selectMain() {
-    if (needsHome(mainSel)) { message(F("HOME FIRST"), F("Choose 'Home' first"), nullptr); return; }
-    switch (mainSel) {
+    const uint8_t id = mainId(mainSel);
+    if (needsHome(id)) { message(F("HOME FIRST"), F("Choose 'Home' first"), nullptr); return; }
+    switch (id) {
+      case M_RECORD:  recSel = 0; recTop = 0; go(Screen::Record); break;
+      case M_SAFETY:  startSafetyDemo(); break;
       case M_DEMO:    go(Screen::DemoSelect); break;
       case M_JOG:     go(Screen::JogSelect); break;
       case M_HOME:    Out.println(F("EV ui home"));   startJob(Job::Home, homing::start(-1, true)); break;
@@ -459,6 +534,15 @@ namespace {
         buzzer::setMuted(!buzzer::muted());
         dirty = true;
         break;
+      case S_ATTRACT:
+        attract::setEnabled(!attract::enabled());
+        dirty = true;
+        break;
+      case S_VISITOR:
+        visitor = true; mainSel = 0; mainTop = 0;
+        Out.println(F("EV ui visitor on"));
+        message(F("VISITOR MODE"), F("To leave: hold the"), F("knob for 5 seconds"));
+        break;
       default:
         go(Screen::Menu);
         break;
@@ -485,8 +569,29 @@ namespace {
     if (fault && screen != Screen::Fault && screen != Screen::Splash) { job = Job::None; go(Screen::Fault); return; }
     if (!fault && screen == Screen::Fault) { go(Screen::Menu); return; }
 
+    // Safety demo: pressed (stop counted) -> show the reaction time; else ran out
+    if (screen == Screen::SafetyDemo && !motion::anyBusy()) {
+      if (motion::stopCount() != safetyStops) {
+        msgTitle = F("STOPPED!");
+        char r[8]; dtostrf(safety::lastReactionMs(), 1, 1, r);
+        snprintf_P(msg1, sizeof(msg1), PSTR("Stopped in %s ms"), r);
+        strcpy_P(msg2, PSTR("(button to motors)"));
+        msgReturn = Screen::Menu; msgSince = millis();
+        go(Screen::Message);
+      } else {
+        message(F("SAFETY DEMO"), F("Not pressed:"), F("try again!"));
+      }
+      return;
+    }
+
     // Demo running (also when started from the console) / finished
     if (demo::active() && screen != Screen::DemoRun) { go(Screen::DemoRun); return; }
+    if (demo::active()) attractWasRunning = attract::running();
+    if (screen == Screen::DemoRun && !demo::active() && attractWasRunning) {
+      attractWasRunning = false;                  // attract stopped by a touch: straight to the menu
+      go(Screen::Menu);
+      return;
+    }
     if (screen == Screen::DemoRun && !demo::active()) {
       msgTitle = F("DEMO STOPPED");
       snprintf_P(msg1, sizeof(msg1), PSTR("Loops done: %u"), demo::loops());
@@ -551,12 +656,16 @@ void begin() {
 }
 
 bool motionActive() { return busy(); }
+uint32_t lastInputMs() { return lastInput; }
+bool visitorMode() { return visitor; }
+void setVisitorMode(bool on) { visitor = on; mainSel = 0; mainTop = 0; go(Screen::Menu); }
 
 void onTurn(int16_t d) {
   lastInput = millis();
+  if (attract::running()) { demo::stop(); return; }   // any touch stops attract mode
   if (screen == Screen::Menu) {
     int16_t s = mainSel + d;
-    mainSel = s < 0 ? 0 : s >= M_COUNT ? M_COUNT - 1 : s;
+    mainSel = s < 0 ? 0 : s >= mainCount() ? mainCount() - 1 : s;
     scrollTo(mainSel, mainTop);
   } else if (screen == Screen::Service) {
     int16_t s = svcSel + d;
@@ -566,6 +675,10 @@ void onTurn(int16_t d) {
     int16_t s = jogSel + d;
     jogSel = s < 0 ? 0 : s >= J_COUNT ? J_COUNT - 1 : s;
     scrollTo(jogSel, jogTop);
+  } else if (screen == Screen::Record) {
+    int16_t s = recSel + d;
+    recSel = s < 0 ? 0 : s >= R_COUNT ? R_COUNT - 1 : s;
+    scrollTo(recSel, recTop);
   } else if (screen == Screen::DemoSelect) {
     int16_t s = demoSel + d;
     demoSel = s < 0 ? 0 : s >= demoCount() ? demoCount() - 1 : s;
@@ -586,6 +699,27 @@ void onSelect() {
     case Screen::Status:  go(Screen::Menu); break;
     case Screen::Message: go(msgReturn); break;
     case Screen::Fault:   sys::acknowledge(); break;
+    case Screen::Record:
+      buzzer::play(buzzer::Sound::Click);
+      switch (recSel) {
+        case R_ADD:
+          if (record::add()) {
+            snprintf_P(msg1, sizeof(msg1), PSTR("Pose %u saved"), record::count());
+            msgTitle = F("RECORD"); msg2[0] = 0; msgReturn = Screen::Record; msgSince = millis();
+            go(Screen::Message);
+          } else message(F("RECORD"), F("Full: 10 poses"), nullptr, Screen::Record);
+          break;
+        case R_PLAY:
+          Out.println(F("EV ui rec play"));
+          if (!demo::startRecorded(true)) message(F("RECORD"), F("Record at least"), F("2 poses first"), Screen::Record);
+          break;
+        case R_CLEAR:
+          record::clear();
+          message(F("RECORD"), F("All poses cleared"), nullptr, Screen::Record);
+          break;
+        default: go(Screen::Menu); break;
+      }
+      break;
     case Screen::DemoSelect:
       buzzer::play(buzzer::Sound::Click);
       if (demoSel >= demo::count()) { go(Screen::Menu); break; }
@@ -614,6 +748,7 @@ void onBack() {
     case Screen::Menu:    go(Screen::Status); break;
     case Screen::JogSelect: go(Screen::Menu); break;
     case Screen::DemoSelect: go(Screen::Menu); break;
+    case Screen::Record:  go(Screen::Menu); break;
     case Screen::Jog:     jogPending = 0; go(Screen::JogSelect); break;
     case Screen::Message: go(msgReturn); break;
     case Screen::Fault:   sys::acknowledge(); break;
@@ -624,9 +759,16 @@ void onBack() {
 void update() {
   uint32_t now = millis();
 
+  // Visitor mode: holding the knob 5 s leaves it (works on every screen)
+  if (visitor && encoder::heldMs() > VISITOR_EXIT_MS && !busy()) {
+    visitor = false; mainSel = 0; mainTop = 0;
+    Out.println(F("EV ui visitor off"));
+    message(F("VISITOR MODE"), F("Off: full menu"), nullptr);
+  }
+
   if (screen == Screen::Splash && now - screenSince >= SPLASH_MS) {
     // after the splash: main menu, with "Home" selected if the robot is not homed
-    mainSel = sys::homed() ? M_DEMO : M_HOME;
+    mainSel = mainIndexOf(sys::homed() ? M_DEMO : M_HOME);
     scrollTo(mainSel, mainTop);
     go(Screen::Menu);
   }
@@ -642,7 +784,7 @@ void update() {
   }
 
   uint16_t period = (screen == Screen::Status || screen == Screen::Progress || screen == Screen::Splash ||
-                     screen == Screen::Jog || screen == Screen::DemoRun)
+                     screen == Screen::Jog || screen == Screen::DemoRun || screen == Screen::SafetyDemo)
                     ? LIVE_MS : MENU_MS;
   if (!dirty && now - lastDraw < period) return;
   dirty = false;

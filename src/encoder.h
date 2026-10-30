@@ -16,6 +16,7 @@ bool    takePress();          // true once per press  (event, cleared on read)
 bool    takeRelease();        // true once per release
 bool    takeLongPress();      // true once when held >= LONG_PRESS_MS
 bool    isDown();             // current debounced state
+uint32_t heldMs();            // how long the button has been held (0 = not pressed)
 long    position();           // total count since startup (for diagnostics)
 uint32_t pressEdgeUs();       // micros() when the last press first showed (reaction time)
 

@@ -162,6 +162,8 @@ void update() {
   }
 }
 
+float lastReactionMs() { return lastReactionUs / 1000.0f; }
+
 void report() {
   Out.print(F("OK reset_cause=")); Out.print(causeText());
   Out.print(F(" last_reaction_ms=")); Out.print(lastReactionUs / 1000.0f, 1);

@@ -25,6 +25,8 @@
 #include "buzzer.h"
 #include "ui.h"
 #include "demo.h"
+#include "record.h"
+#include "attract.h"
 #include "serial_io.h"
 
 // Handle input events once per pass.
@@ -84,9 +86,11 @@ void setup() {
   motion::begin();
   homing::begin();
   demo::begin();
+  attract::begin();
   calib::begin();
   settings::begin();          // EEPROM: before limits and rotation zero
   limits::begin();
+  record::begin();
   rotzero::begin();
   buzzer::begin();
   bool oled = display::begin();
@@ -109,6 +113,7 @@ void loop() {
   calib::update();
   rotzero::update();
   demo::update();
+  attract::update();
   buzzer::update();
   display::update();          // sends one small piece of the current frame
   ui::update();

@@ -20,4 +20,7 @@ bool motionActive();   // something moves / a sequence runs: a press means STOP
 void onTurn(int16_t d);
 void onSelect();       // short press (released before the long-press time)
 void onBack();         // long press
+uint32_t lastInputMs();   // last encoder input (attract mode: activity)
+bool visitorMode();
+void setVisitorMode(bool on);
 }  // namespace ui

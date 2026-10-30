@@ -48,10 +48,12 @@ wait for the `OK`/`ERR` line with its id, ignoring everything else in between.
 | `ping` | `OK pong` (link check; basis of the heartbeat in step 4.4) |
 | `st` | `OK t=<ms> state=<STATE> busy=<6 x 0/1> pos=<p1>,...,<p6> homed=<6 x 0/1>` |
 | `stream <ms>` / `stream off` / `stream` | Start (20–10000 ms), stop, or show the status stream |
-| `status` | firmware, profile, state, loops/s, maxloop_us, isr_max_us, uptime_s, st_skipped |
+| `status` | firmware, profile, state, loops/s, maxloop_us, isr_max_us, uptime_s, st_skipped, free_ram |
 | `settings` | `OK settings eeprom=valid|empty calib=<0/1> [front_max=.. gap1=.. gap2=..] parked=<0/1>` |
 | `zero <1|3|5|all>` / `park` / `forget` | rotation zero, park before power-off, erase stored calib |
 | `demo` / `demo <1-3>` / `demo stop` | list demos (`OK demos 1=Telescope ...`), run one in a loop, stop |
+| `rec` / `rec add|play|clear` | `OK rec poses=<n> [a1,..,a6] ...`; add current pose, play in a loop, clear |
+| `attract on|off` / `visitor on|off` | attract mode (demo after 3 min idle); short visitor menu |
 | `limits` | `OK limits calibrated=<0/1> source=profile|calib|eeprom active=<0/1> front_max=.. gap_<A>/<B>=.. margin=.. extra=<mm per carriage> span_tol=.. range_now=<axis>:<lo>..<hi>,...` (`?` = no limit known) |
 
 Status line (stream):
@@ -103,6 +105,9 @@ the order of `info`. Units: translation mm and mm/s; rotation degrees and rpm.
 | `EV ui home` / `EV ui calib` / `EV ui park` / `EV zero set <axes>` | Action started from the display menu |
 | `EV demo start <name>` / `EV demo stopped (<why>) loops=<n>` | Demo started / ended |
 | `EV ui demo <name>` | Demo started from the display menu |
+| `EV attract start` | Attract mode started a demo |
+| `EV rec pose <n> saved` / `EV rec cleared` | Record & replay |
+| `EV ui rec play` / `EV ui safety demo` / `EV ui visitor on|off` | Started from the display menu |
 | `EV calib re-homing` | calib finished; automatic `home` follows (its EV home lines) |
 | `EV calib aborted (previous values kept)` | Stopped by `stop`, encoder or fault |
 | `EV calib failed calib <axis>: <why>` | Switch not found / implausible gap; followed by FAULT |

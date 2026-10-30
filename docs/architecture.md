@@ -575,8 +575,9 @@ Screens: Splash, Status, Menu, Service, Progress, Message, Error. Each screen ha
 `draw...(part)` function drawn one part per loop pass; menus redraw on input (and once a
 second for the state tag), live screens 5x per second.
 ```
-MAIN MENU: Demo | Jog | Home | Status | Service
-SERVICE:   Calibrate limits | Zero rotations | Park | Driver scan | Sound on/off | < Back
+MAIN MENU: Demo | Jog | Record | Home | Status | Safety demo | Service
+           (visitor mode: Demo | Safety demo | Status)
+SERVICE:   Calibrate limits | Zero rotations | Park | Driver scan | Sound | Attract | Visitor mode | < Back
 ```
 **Encoder** (`main.cpp: handleEvents`): turn -> `ui::onTurn`; press while `ui::motionActive()`
 (a move, homing, calib or park) -> `safety::userStop` at once; otherwise the press is armed
@@ -604,6 +605,18 @@ program loops. States: DEMO while running. Stops on a press (also during a pause
 a fault or any state change; reports `EV demo stopped (...) loops=n`. Programs: Telescope,
 Wave, Spin. The UI shows a program list and a "DEMO RUNNING" screen.
 
+### Attract mode, record & replay, visitor mode (Steps 3.5–3.7)
+- **Attract** (`attract.cpp`): idle = no motion, no encoder input (`ui::lastInputMs`) and no
+  console command (`console::lastCommandMs`) for `ATTRACT_IDLE_MS` (3 min) while READY with
+  active limits -> `demo::start(next)`, cycling the programs. `ui::onTurn` stops it.
+- **Record** (`record.cpp`): poses = 6 axes x int16 in 0.1 mm / 0.1 deg (10 poses, 120 bytes),
+  EEPROM block at address 64 with magic + checksum. `demo::startRecorded()` plays them with
+  the same sequencer (absolute targets instead of base/ext).
+- **Safety demo** (`ui.cpp`): rotations only (no translation risk), slow, long; the press goes
+  through the normal STOP path, and `safety::lastReactionMs()` is shown.
+- **Visitor mode** (`ui.cpp`): the main menu is a list of item ids; visitor mode uses a
+  short list (Demo, Safety demo, Status). `encoder::heldMs()` > 5 s leaves it.
+
 ### Buzzer (`buzzer.cpp`)
 Casper's melodies (click, beep, ok, boot, error, home) as note tables in flash, played with
 `tone()` (Timer2; Timer1 is the step interrupt) and advanced by `buzzer::update()`. The buzzer
@@ -621,12 +634,13 @@ watches the state machine itself: FAULT -> error melody, HOMING -> READY -> home
 - **Runtime diagnostic commands** (`chop`, `ms`, `cur`) allow testing driver settings
   without reflashing; this is how the StealthChop slip was diagnosed in minutes.
 
-## 11. Console commands (firmware 3.4.0)
+## 11. Console commands (firmware 3.7.0)
 ```
 help  status  state  ack  safety  wdtest  inputs  watch on|off  led g|b|c|r|off [slow|fast]
 drivers  move <1-6> <amount> [speed]  mv <axis>=<amount> ... [t=<s>] [v=<%>]
 stop  pos  en <1-6|all>  dis <1-6|all>  isr reset  home [2|4|6]  calib  limits
 zero <1|3|5|all>  park  settings  forget  demo [1-3|stop]
+rec [add|play|clear]  attract on|off  visitor on|off
 info  ping  st  stream <ms>|off          (protocol, Step 1.6; prefix any command with #<id>)
 chop <1-6> stealth|spread|hybrid [speed]  ms <1-6> <2..32>  cur <1-6> <mA>
 ```
@@ -645,5 +659,9 @@ moving backward, T1 approaches T2 and T2 approaches T3. Contact is prevented by 
 - With all six axes at maximum speed the step interrupt uses most of the CPU (simulator:
   ~900 loop passes/s). Fine for now; revisit if demos need all axes at full speed together.
 - Rotation zero is kept across power cycles only if the robot was parked (no sensor).
+- RAM: ~58 % static + 1 KB display buffer; `status` shows `free_ram` (2.3 KB at fw 3.7.0).
+  Check it when adding features; the V2 TFT needs a different drawing approach (no full
+  frame buffer fits: 320x240).
+- Demo choreography and speeds to be refined on V2 (V1 slips).
 - Homing from far away is slow (up to ~30 s per carriage at 5 mm/s). Option: faster
   approach, then a slow final approach.

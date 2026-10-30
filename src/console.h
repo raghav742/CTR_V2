@@ -12,5 +12,6 @@ namespace console {
 void begin();
 void update();          // call every loop pass
 bool watching();        // "watch on": print input events live
+uint32_t lastCommandMs(); // millis() of the last command (attract mode: activity)
 void updateStream();    // ST line every <ms> if "stream" is on (called by update)
 }  // namespace console

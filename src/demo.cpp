@@ -7,6 +7,7 @@
 #include "safety.h"
 #include "rotation_zero.h"
 #include "system_state.h"
+#include "record.h"
 
 namespace demo {
 namespace {
@@ -58,6 +59,8 @@ namespace {
   enum class Phase : uint8_t { Idle, Moving, Pausing };
   Phase    phase = Phase::Idle;
   uint8_t  prog = 0, cur = 0;
+  bool     recorded = false;              // playing the recorded poses (step 3.6)
+  constexpr uint16_t REC_MS = 2500, REC_PAUSE = 500;
   uint16_t loopCount = 0;
   uint32_t pauseStart = 0, stopsAtStart = 0;
   float    rotBase[hw::NUM_AXES];          // rotation zero used by this run
@@ -97,9 +100,25 @@ namespace {
     return motion::moveGroup(amount, mask, motion_cfg::DEMO_SPEED_PCT, -(s.ms / 1000.0f), 0, true);
   }
 
+  // Recorded pose: absolute values (0.1 mm / 0.1 deg)
+  bool moveToRecorded(uint8_t i) {
+    const int16_t* p = record::pose(i);
+    float amount[hw::NUM_AXES];
+    uint8_t mask = 0;
+    for (uint8_t a = 0; a < hw::NUM_AXES; a++) {
+      amount[a] = p[a] / 10.0f - motion::position(a);
+      if (fabsf(amount[a]) >= 0.05f) mask |= _BV(a);
+    }
+    if (!mask) return true;
+    return motion::moveGroup(amount, mask, motion_cfg::DEMO_SPEED_PCT, -(REC_MS / 1000.0f), 0, true);
+  }
+
+  uint8_t stepCount() { return recorded ? record::count() : PROGRAMS[prog].n; }
+  uint16_t pauseOf(uint8_t i) { return recorded ? REC_PAUSE : stepAt(i).pause; }
+
   void startStep() {
-    Step s = stepAt(cur);
-    if (!moveTo(s)) { finish(F("move refused, see ERR")); return; }
+    bool ok = recorded ? moveToRecorded(cur) : moveTo(stepAt(cur));
+    if (!ok) { finish(F("move refused, see ERR")); return; }
     phase = Phase::Moving;
   }
 }
@@ -110,11 +129,12 @@ uint8_t count() { return NPROG; }
 bool active() { return phase != Phase::Idle; }
 uint8_t program() { return prog; }
 uint8_t step() { return cur; }
-uint8_t steps() { return PROGRAMS[prog].n; }
+uint8_t steps() { return stepCount(); }
 uint16_t loops() { return loopCount; }
 
 const __FlashStringHelper* name(uint8_t p) {
   switch (p) {
+    case RECORDED: return F("Recorded");
     case 0:  return F("Telescope");
     case 1:  return F("Wave");
     default: return F("Spin");
@@ -132,11 +152,26 @@ bool start(uint8_t p, bool quiet) {
   for (uint8_t i = 0; i < hw::NUM_AXES; i++)
     rotBase[i] = (hw::AXES[i].type == AxisType::Rotation && !rotzero::referenced(i)) ? motion::position(i) : 0;
 
-  prog = p; cur = 0; loopCount = 0;
+  prog = p; cur = 0; loopCount = 0; recorded = false;
   stopsAtStart = motion::stopCount();
   safety::forceSpanRule(true);                 // big automatic moves: keep tubes supported
   if (!quiet) { Out.print(F("OK demo ")); Out.println(name(p)); }
   Out.print(F("EV demo start ")); Out.println(name(p));
+  startStep();
+  return active();
+}
+
+bool startRecorded(bool quiet) {
+  if (active())          { Out.println(F("ERR demo already running")); return false; }
+  if (motion::anyBusy()) { Out.println(F("ERR stop motion first")); return false; }
+  if (record::count() < 2) { Out.println(F("ERR record at least 2 poses")); return false; }
+  if (!sys::homed())     { Out.println(F("ERR home first")); return false; }
+  if (!sys::request(sys::State::Demo)) return false;
+  prog = RECORDED; cur = 0; loopCount = 0; recorded = true;
+  stopsAtStart = motion::stopCount();
+  // user poses: normal limits only (like the manual moves they were made with)
+  if (!quiet) Out.println(F("OK rec play"));
+  Out.println(F("EV demo start Recorded"));
   startStep();
   return active();
 }
@@ -157,8 +192,8 @@ void update() {
     pauseStart = millis();
   }
   if (phase == Phase::Pausing) {
-    if (millis() - pauseStart < stepAt(cur).pause) return;
-    if (++cur >= PROGRAMS[prog].n) { cur = 0; loopCount++; }
+    if (millis() - pauseStart < pauseOf(cur)) return;
+    if (++cur >= stepCount()) { cur = 0; loopCount++; }
     startStep();
   }
 }

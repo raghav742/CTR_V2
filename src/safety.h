@@ -30,5 +30,6 @@ bool spanRuleForced();    // homing's own moves: allowed while HOMING, no 50 mm 
 void userStop(const __FlashStringHelper* source, uint32_t edgeUs);
 
 void report();           // console "safety" command
+float lastReactionMs();  // last measured stop reaction (ms)
 void watchdogTest();     // console "wdtest": freeze on purpose
 }  // namespace safety

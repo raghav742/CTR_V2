@@ -55,9 +55,13 @@ constexpr float TRA_SOFT_MIN_MM = 1.0f;
 constexpr float CALIB_CONTACT_FAST  = 8.0f;   // mm/s, first approach of one carriage onto the next
 constexpr float CALIB_CONTACT_SPEED = 3.0f;   // mm/s, final approach (sets the gap)
 constexpr float CALIB_MOVE_SPEED    = 10.0f;  // mm/s, parking and return moves (V1: lower = less slip)
-constexpr float CALIB_MAX_DEVIATION_MM = 5.0f;
-constexpr float PARK_SPEED_PCT      = 50.0f;
-constexpr float DEMO_SPEED_PCT      = 70.0f;  // demos (step 3.4): % of the maximum speed (V1: slip)  // "park" (step 2.4): % of the maximum speed // reject a calib value this far from the profile value
+constexpr float CALIB_MAX_DEVIATION_MM = 5.0f; // reject a calib value this far from the profile value
+
+// Sequences (phase 3)
+constexpr float PARK_SPEED_PCT      = 50.0f;  // "park" (step 2.4): % of the maximum speed
+constexpr float DEMO_SPEED_PCT      = 70.0f;  // demos (step 3.4): % of the maximum speed (V1: slip)
+constexpr uint32_t ATTRACT_IDLE_MS  = 180000UL; // attract mode (step 3.5): idle time before a demo
+                                                // starts (ms); 5000UL for testing
 constexpr float CALIB_REST_MM       = 2.0f;   // where calib leaves each carriage at the end
 constexpr float CALIB_PARK_MM       = 50.0f;  // before the 3rd carriage (T3) is measured, all carriages
                                               // go here together, so T3 touches T2 at ~50 + gap

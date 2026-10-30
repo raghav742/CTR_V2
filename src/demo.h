@@ -22,6 +22,8 @@ void update();                        // call every loop pass
 uint8_t count();                      // number of programs
 const __FlashStringHelper* name(uint8_t prog);
 bool start(uint8_t prog, bool quiet = false);
+constexpr uint8_t RECORDED = 255;     // program() while playing the recorded poses
+bool startRecorded(bool quiet = false);   // step 3.6
 void stop();
 bool active();
 uint8_t program();                    // running program

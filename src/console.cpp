@@ -17,6 +17,11 @@
 #include "settings.h"
 #include "rotation_zero.h"
 #include "demo.h"
+#include "record.h"
+#include "attract.h"
+#include "ui.h"
+
+extern "C" { extern char __heap_start; extern char* __brkval; }   // avr-libc heap bounds
 
 namespace console {
 namespace {
@@ -26,6 +31,7 @@ namespace {
   uint8_t len      = 0;
   bool    overflow = false;
   bool    watchOn  = false;
+  uint32_t lastCmdMs = 0;
 
   // Status stream ("stream <ms>"): one ST line every period.
   // If the send buffer has no room, the line is skipped (counted),
@@ -61,6 +67,9 @@ namespace {
     Out.println(F("  park              rotations to their zero, carriages to rest; then power off"));
     Out.println(F("  settings          what is stored in EEPROM"));
     Out.println(F("  demo [1-3|stop]   list demos, run one (loops until stopped), stop"));
+    Out.println(F("  rec [add|play|clear]  recorded poses: list, add current, play in a loop, clear"));
+    Out.println(F("  attract on|off    start a demo by itself after 3 min idle"));
+    Out.println(F("  visitor on|off    short visitor menu (leave: hold knob 5 s)"));
     Out.println(F("  forget            erase the stored calib result (use profile values)"));
     Out.println(F("  stop              stop all motors (also aborts homing)"));
     Out.println(F("  pos               positions of all axes"));
@@ -124,6 +133,22 @@ namespace {
     int n = atoi(a);
     if (n < 1 || n > demo::count()) { Out.println(F("ERR usage: demo [1-3|stop]")); return; }
     demo::start(n - 1);
+  }
+
+  void cmdRec(const char* a) {
+    if (!a)                        { record::report(); return; }
+    if (!strcmp(a, "add"))         { if (record::add()) record::report(); return; }
+    if (!strcmp(a, "clear"))       { record::clear(); Out.println(F("OK rec cleared")); return; }
+    if (!strcmp(a, "play"))        { demo::startRecorded(); return; }
+    Out.println(F("ERR usage: rec [add|play|clear]"));
+  }
+
+  // which: 0 = attract, 1 = visitor
+  void cmdOnOff(const char* a, uint8_t which) {
+    if (!a || (strcmp(a, "on") && strcmp(a, "off"))) { Out.println(F("ERR usage: attract|visitor on|off")); return; }
+    bool on = !strcmp(a, "on");
+    if (which == 0) attract::setEnabled(on); else ui::setVisitorMode(on);
+    Out.print(which == 0 ? F("OK attract ") : F("OK visitor ")); Out.println(on ? F("on") : F("off"));
   }
 
   void cmdZero(const char* a) {
@@ -196,6 +221,12 @@ namespace {
     Out.print(F("OK current=")); Out.print(mA); Out.println(F("mA"));
   }
 
+  // Bytes between the heap and the stack (RAM still free)
+  int freeRam() {
+    int v;
+    return (int)&v - (__brkval == 0 ? (int)&__heap_start : (int)__brkval);
+  }
+
   void cmdStatus() {
     Out.print(F("OK fw="));       Out.print(FW_VERSION);
     Out.print(F(" profile=\""));  Out.print(hw::PROFILE_NAME);
@@ -204,7 +235,8 @@ namespace {
     Out.print(F(" maxloop_us=")); Out.print(loop_stats::maxLoopUs());
     Out.print(F(" isr_max_us=")); Out.print(steppers::isrMaxUs(), 1);
     Out.print(F(" uptime_s="));   Out.print(millis() / 1000);
-    Out.print(F(" st_skipped="));  Out.println(stSkipped);
+    Out.print(F(" st_skipped="));  Out.print(stSkipped);
+    Out.print(F(" free_ram="));    Out.println(freeRam());
   }
 
   void cmdInputs() {
@@ -339,6 +371,9 @@ namespace {
     else if (!strcmp(argv[0], "zero"))   cmdZero(argv[1]);
     else if (!strcmp(argv[0], "park"))   rotzero::park();
     else if (!strcmp(argv[0], "demo"))   cmdDemo(argv[1]);
+    else if (!strcmp(argv[0], "rec"))    cmdRec(argv[1]);
+    else if (!strcmp(argv[0], "attract")) cmdOnOff(argv[1], 0);
+    else if (!strcmp(argv[0], "visitor")) cmdOnOff(argv[1], 1);
     else if (!strcmp(argv[0], "settings")) settings::report();
     else if (!strcmp(argv[0], "forget")) { settings::forgetCalib(); limits::begin(); Out.println(F("OK stored calib erased (profile values in use)")); }
     else if (!strcmp(argv[0], "stop"))   { safety::userStop(F("command"), micros()); Out.println(F("OK stop")); }
@@ -370,7 +405,7 @@ void update() {
     if (c == 0x08 || c == 0x7F) { if (len) len--; continue; }
     if (c == '\r' || c == '\n') {
       if (overflow)   Out.println(F("ERR line too long"));
-      else if (len)   { line[len] = '\0'; execute(line); }
+      else if (len)   { line[len] = '\0'; lastCmdMs = millis(); execute(line); }
       len = 0; overflow = false;
     } else if ((uint8_t)c < 0x20 && c != '\t') {
       // other control characters: ignore
@@ -384,6 +419,7 @@ void update() {
 }
 
 bool watching() { return watchOn; }
+uint32_t lastCommandMs() { return lastCmdMs; }
 
 void updateStream() {
   if (!streamMs) return;

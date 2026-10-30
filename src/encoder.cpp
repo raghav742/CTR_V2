@@ -64,5 +64,6 @@ bool    takeRelease()   { bool e = evRelease; evRelease = false; return e; }
 bool    takeLongPress() { bool e = evLong;    evLong = false;    return e; }
 bool    isDown()        { return stable; }
 long    position()      { return total; }
+uint32_t heldMs()       { return stable ? millis() - downSince : 0; }
 uint32_t pressEdgeUs()  { return pressUs; }
 }  // namespace encoder
