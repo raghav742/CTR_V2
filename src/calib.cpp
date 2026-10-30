@@ -8,6 +8,7 @@
 #include "system_state.h"
 #include "homing.h"
 #include "limits.h"
+#include "settings.h"
 
 namespace calib {
 namespace {
@@ -94,7 +95,8 @@ namespace {
     for (uint8_t k = 0; k + 1 < C; k++) ok &= plausible(k ? F("gap2") : F("gap1"), gap[k], hw::CALIB_DEFAULT_GAP_MM[k]);
     if (ok) {
       limits::set(frontMax, gap);
-      Out.println(F("EV calib stored"));
+      settings::saveCalib(frontMax, gap);
+      Out.println(F("EV calib stored (also in EEPROM)"));
       // Furthest each carriage can physically go (all carriages in front at their maximum),
       // before the margins of the limits
       Out.print(F("EV calib reach"));

@@ -19,6 +19,8 @@
 #include "homing.h"
 #include "calib.h"
 #include "limits.h"
+#include "settings.h"
+#include "rotation_zero.h"
 #include "serial_io.h"
 
 // Handle input events once per pass.
@@ -59,7 +61,9 @@ void setup() {
   motion::begin();
   homing::begin();
   calib::begin();
+  settings::begin();          // EEPROM: before limits and rotation zero
   limits::begin();
+  rotzero::begin();
 
   Out.print(F("CTR V2 firmware ")); Out.print(FW_VERSION);
   Out.print(F(" | profile: ")); Out.println(hw::PROFILE_NAME);
@@ -75,6 +79,7 @@ void loop() {
   limit_switches::update();
   homing::update();           // right after the switches: stop on the edge this pass
   calib::update();
+  rotzero::update();
   status_led::update();
   motion::update();
   sys::update();

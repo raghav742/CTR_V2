@@ -4,12 +4,13 @@
 #include "motion_config.h"
 #include "motion.h"
 #include "homing.h"
+#include "settings.h"
 
 namespace limits {
 namespace {
   constexpr uint8_t C = hw::NUM_HOMED_AXES;      // number of carriages
   bool  valid = false;
-  bool  measured = false;            // values come from calib (not the profile)
+  uint8_t source = 0;                // 0 = profile, 1 = calib (this session), 2 = EEPROM
   float fMax = 0;
   float gaps[C - 1];
 
@@ -27,12 +28,14 @@ namespace {
   float upper(uint8_t k, const float p[]) {
     float u = 1e9f;
     if (active()) u = contactLimit(k, p);
-    if (k + 1 < C && homedPair(k)) u = fminf(u, p[k + 1] + motion_cfg::LIMIT_SPAN_TOL_MM);
+    if (motion_cfg::SPAN_RULE_FOR_MOVES && k + 1 < C && homedPair(k))
+      u = fminf(u, p[k + 1] + motion_cfg::LIMIT_SPAN_TOL_MM);
     return u;
   }
   float lower(uint8_t k, const float p[]) {
     float l = homing::axisHomed(ax(k)) ? motion_cfg::TRA_SOFT_MIN_MM : -1e9f;
-    if (k > 0 && homedPair(k - 1)) l = fmaxf(l, p[k - 1] - motion_cfg::LIMIT_SPAN_TOL_MM);
+    if (motion_cfg::SPAN_RULE_FOR_MOVES && k > 0 && homedPair(k - 1))
+      l = fmaxf(l, p[k - 1] - motion_cfg::LIMIT_SPAN_TOL_MM);
     return l;
   }
 }
@@ -45,14 +48,33 @@ void begin() {
     gaps[k] = hw::CALIB_DEFAULT_GAP_MM[k];
     if (gaps[k] <= 0) valid = false;
   }
-  measured = false;
+  source = 0;
+
+  // A calib result stored in EEPROM replaces them, if it is plausible
+  if (settings::calibStored()) {
+    float fm, g[C - 1];
+    settings::calibValues(fm, g);
+    bool ok = fabsf(fm - hw::CALIB_DEFAULT_FRONT_MAX_MM) <= motion_cfg::CALIB_MAX_DEVIATION_MM ||
+              hw::CALIB_DEFAULT_FRONT_MAX_MM <= 0;
+    for (uint8_t k = 0; k + 1 < C; k++)
+      ok &= fabsf(g[k] - hw::CALIB_DEFAULT_GAP_MM[k]) <= motion_cfg::CALIB_MAX_DEVIATION_MM ||
+            hw::CALIB_DEFAULT_GAP_MM[k] <= 0;
+    if (ok) {
+      fMax = fm;
+      for (uint8_t k = 0; k + 1 < C; k++) gaps[k] = g[k];
+      valid = true;
+      source = 2;
+    } else {
+      Out.println(F("EV limits stored calib values implausible: using profile values"));
+    }
+  }
 }
 
 void set(float frontMax, const float gap[]) {
   fMax = frontMax;
   for (uint8_t k = 0; k + 1 < C; k++) gaps[k] = gap[k];
   valid = true;
-  measured = true;
+  source = 1;
 }
 
 bool calibrated() { return valid; }
@@ -87,7 +109,7 @@ bool checkMove(const float amount[], uint8_t mask) {
     if (!involved) continue;
 
     // span: not further ahead of the carriage behind than at home
-    if (k + 1 < C && homedPair(k) &&
+    if (motion_cfg::SPAN_RULE_FOR_MOVES && k + 1 < C && homedPair(k) &&
         endPos[k] > endPos[k + 1] + motion_cfg::LIMIT_SPAN_TOL_MM + 0.005f) {
       Out.print(F("ERR ")); Out.print(nm(k)); Out.print(F(" would be "));
       Out.print(endPos[k] - endPos[k + 1], 2); Out.print(F(" mm ahead of ")); Out.print(nm(k + 1));
@@ -112,7 +134,10 @@ bool checkMove(const float amount[], uint8_t mask) {
 
 void report() {
   Out.print(F("OK limits calibrated=")); Out.print(valid ? 1 : 0);
-  if (valid) { Out.print(F(" source=")); Out.print(measured ? F("calib") : F("profile")); }
+  if (valid) {
+    Out.print(F(" source="));
+    Out.print(source == 1 ? F("calib") : source == 2 ? F("eeprom") : F("profile"));
+  }
   Out.print(F(" active=")); Out.print(active() ? 1 : 0);
   if (valid) {
     Out.print(F(" front_max=")); Out.print(fMax, 2);
@@ -124,7 +149,7 @@ void report() {
     Out.print(F(" extra="));
     for (uint8_t k = 0; k < C; k++) { if (k) Out.print(','); Out.print(hw::CARRIAGE_EXTRA_MARGIN_MM[k], 0); }
   }
-  Out.print(F(" span_tol=")); Out.print(motion_cfg::LIMIT_SPAN_TOL_MM, 1);
+  Out.print(F(" span_rule=")); Out.print(motion_cfg::SPAN_RULE_FOR_MOVES ? F("on") : F("homing/calib only"));
   // Range each carriage could move to on its own right now
   float p[C];
   for (uint8_t k = 0; k < C; k++) p[k] = motion::position(ax(k));

@@ -55,7 +55,8 @@ constexpr float TRA_SOFT_MIN_MM = 1.0f;
 constexpr float CALIB_CONTACT_FAST  = 8.0f;   // mm/s, first approach of one carriage onto the next
 constexpr float CALIB_CONTACT_SPEED = 3.0f;   // mm/s, final approach (sets the gap)
 constexpr float CALIB_MOVE_SPEED    = 10.0f;  // mm/s, parking and return moves (V1: lower = less slip)
-constexpr float CALIB_MAX_DEVIATION_MM = 5.0f; // reject a calib value this far from the profile value
+constexpr float CALIB_MAX_DEVIATION_MM = 5.0f;
+constexpr float PARK_SPEED_PCT      = 50.0f;  // "park" (step 2.4): % of the maximum speed // reject a calib value this far from the profile value
 constexpr float CALIB_REST_MM       = 2.0f;   // where calib leaves each carriage at the end
 constexpr float CALIB_PARK_MM       = 50.0f;  // before the 3rd carriage (T3) is measured, all carriages
                                               // go here together, so T3 touches T2 at ~50 + gap
@@ -69,6 +70,10 @@ constexpr float LIMIT_MARGIN_MM     = 2.0f;   // stay this far from the far swit
 // front <= back + LIMIT_SPAN_TOL_MM. The tolerance covers the small differences
 // homing leaves (each carriage rests 1.3-1.4 mm off its switch).
 constexpr float LIMIT_SPAN_TOL_MM   = 1.0f;
+// The span rule is needed for the long automatic moves (homing and calib move the
+// carriages together by design). Manual moves are short and may move each tube
+// individually (Raghav, 2026-10-30): false = span rule not applied to normal moves.
+constexpr bool  SPAN_RULE_FOR_MOVES = false;
 
 // Driver health check (safety): one driver per interval, round-robin, so each
 // driver is checked every 6 x interval. One check = 2 UART reads = ~9 ms of

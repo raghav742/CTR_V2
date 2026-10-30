@@ -491,15 +491,17 @@ gap the two have when both are at zero. So one measurement describes contact eve
 
 ### The rules (`limits.cpp`)
 Between each carriage and the one behind it:
-- **Span** (needs homing only): `front <= back + 1 mm` — never further apart than at home.
+- **Span**: `front <= back + 1 mm` — never further apart than at home. Applied by the
+  *sequences* (homing and calib move the carriages together); not applied to normal moves
+  since v2.5.1 (`SPAN_RULE_FOR_MOVES = false`): manual moves are short and may move each
+  tube individually.
 - **Contact** (needs calib): `back <= front + gap − margin − extra` (margin 2 mm; extra per
   carriage from `CARRIAGE_EXTRA_MARGIN_MM`: T3 50 mm, because at its full range it disturbed
   the front of the robot).
 - Front carriage: `position <= front_max − margin`.
 
-So each carriage is boxed in: `back − gap + margin <= front <= back + 1`. To move a carriage
-forward, the carriages behind it come along in the same `mv`; a back carriage may close in
-alone.
+For normal moves each carriage is therefore limited by the far end or by the carriage in
+front (contact), plus the soft minimum of 1 mm.
 - Checked by `safety::checkGroup()` inside `motion::moveGroup()`, on the **end positions**
   of the move. Coordinated moves are proportional, so each gap changes linearly between start
   and end: if it is fine at both ends it is fine all the way.
@@ -515,6 +517,31 @@ alone.
 - `limits` prints the measured values, `source=profile|calib`, and `range_now`: the lowest..highest position each
   carriage could move to on its own right now.
 
+## 9c. Rotation zero, parking and EEPROM (Steps 2.4 + 2.5, decision D10)
+
+### Rotation zero (`rotation_zero.cpp`)
+The rotation axes have no sensor, so their zero is set by hand: turn a tube with `move`
+until it is aligned (e.g. a mark), then `zero <axis>` (or `zero all`) makes that angle 0.
+The rotations turn freely, so there is no limit; the zero only gives a repeatable start
+orientation for demos and for record & replay.
+
+### Parking
+`park` builds one coordinated move: every referenced rotation to the nearest full turn of
+its zero (`round(pos / 360) * 360`, the shortest way) and every homed carriage to 2 mm. The
+move goes through the normal limit checks. When it is done, the rotation positions are set
+to exactly 0 and the "parked" flag is written to EEPROM: the robot can be switched off.
+At the next start `rotzero::begin()` reads the flag: parked -> rotation zeros restored (a
+switched-off stepper stays where it is, at most settling 0.9 deg to the nearest full step);
+not parked -> zeros unknown. The first rotation move clears the flag again.
+
+### EEPROM (`settings.cpp`)
+One small record at address 0: magic number, version, the last accepted calib result,
+the parked flag and a checksum. `EEPROM.put()` only writes bytes that changed. Read once in
+`setup()` before `limits::begin()` and `rotzero::begin()`. Empty, old or corrupt data is
+ignored (profile values, rotation unknown). A stored calib result is used only if it is
+within 5 mm of the profile values. Writes happen only on calib, park and the first rotation
+move after a park. Commands: `settings` (show), `forget` (erase the stored calib result).
+
 ## 10. Development and test method
 
 - Each step: design explained -> code -> compiled -> simulator (where possible) -> robot test
@@ -527,11 +554,12 @@ alone.
 - **Runtime diagnostic commands** (`chop`, `ms`, `cur`) allow testing driver settings
   without reflashing; this is how the StealthChop slip was diagnosed in minutes.
 
-## 11. Console commands (firmware 2.3.3)
+## 11. Console commands (firmware 2.5.0)
 ```
 help  status  state  ack  safety  wdtest  inputs  watch on|off  led g|b|c|r|off [slow|fast]
 drivers  move <1-6> <amount> [speed]  mv <axis>=<amount> ... [t=<s>] [v=<%>]
 stop  pos  en <1-6|all>  dis <1-6|all>  isr reset  home [2|4|6]  calib  limits
+zero <1|3|5|all>  park  settings  forget
 info  ping  st  stream <ms>|off          (protocol, Step 1.6; prefix any command with #<id>)
 chop <1-6> stealth|spread|hybrid [speed]  ms <1-6> <2..32>  cur <1-6> <mA>
 ```
@@ -549,7 +577,6 @@ moving backward, T1 approaches T2 and T2 approaches T3. Contact is prevented by 
   speed the simulator shows single passes of 3–8 ms when a move starts or ends.
 - With all six axes at maximum speed the step interrupt uses most of the CPU (simulator:
   ~900 loop passes/s). Fine for now; revisit if demos need all axes at full speed together.
-- Rotation axes have no zero reference yet (Step 2.4).
-- Calibration values are lost at power-off until step 2.5 (EEPROM).
+- Rotation zero is kept across power cycles only if the robot was parked (no sensor).
 - Homing from far away is slow (up to ~30 s per carriage at 5 mm/s). Option: faster
   approach, then a slow final approach.

@@ -17,7 +17,7 @@
 #include <Arduino.h>
 
 namespace limits {
-void  begin();                  // load the known values from the hardware profile
+void  begin();                  // profile values, or a plausible calib result from EEPROM
 void  set(float frontMax, const float gap[]);   // from calib
 bool  calibrated();
 bool  active();                 // calibrated AND all carriages homed

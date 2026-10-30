@@ -14,6 +14,8 @@
 #include "homing.h"
 #include "calib.h"
 #include "limits.h"
+#include "settings.h"
+#include "rotation_zero.h"
 
 namespace console {
 namespace {
@@ -53,7 +55,11 @@ namespace {
     Out.println(F("  mv <axis>=<amount> ... [t=<s>] [v=<%>]   coordinated move, all finish together"));
     Out.println(F("  home [2|4|6]      home all translation axes (T3, T2, T1) or one"));
     Out.println(F("  calib             measure far end and gaps between carriages (after home)"));
-    Out.println(F("  limits            measured limits and current maximum per carriage"));
+    Out.println(F("  limits            measured limits and current range per carriage"));
+    Out.println(F("  zero <1|3|5|all>  current angle of a rotation axis becomes 0"));
+    Out.println(F("  park              rotations to their zero, carriages to rest; then power off"));
+    Out.println(F("  settings          what is stored in EEPROM"));
+    Out.println(F("  forget            erase the stored calib result (use profile values)"));
     Out.println(F("  stop              stop all motors (also aborts homing)"));
     Out.println(F("  pos               positions of all axes"));
     Out.println(F("  en <1-6|all> / dis <1-6|all>  enable / disable motor drivers"));
@@ -103,6 +109,13 @@ namespace {
     int8_t i = parseAxis(a);
     if (i < 0) { Out.println(F("ERR usage: home [2|4|6]")); return; }
     homing::start(i);
+  }
+
+  void cmdZero(const char* a) {
+    if (a && !strcmp(a, "all")) { rotzero::setZero(-1); return; }
+    int8_t i = parseAxis(a);
+    if (i < 0 || hw::AXES[i].type != AxisType::Rotation) { Out.println(F("ERR usage: zero <1|3|5|all> (rotation axes)")); return; }
+    rotzero::setZero(i);
   }
 
   void cmdPos() {
@@ -246,7 +259,8 @@ namespace {
       Out.print(motion::position(i), 2);
     }
     Out.print(F(" homed="));
-    for (uint8_t i = 0; i < hw::NUM_AXES; i++) Out.print(homing::axisHomed(i) ? '1' : '0');
+    for (uint8_t i = 0; i < hw::NUM_AXES; i++)
+      Out.print(homing::axisHomed(i) || rotzero::referenced(i) ? '1' : '0');
     Out.println();
   }
 
@@ -307,6 +321,10 @@ namespace {
     else if (!strcmp(argv[0], "home"))   cmdHome(argv[1]);
     else if (!strcmp(argv[0], "calib"))  calib::start();
     else if (!strcmp(argv[0], "limits")) limits::report();
+    else if (!strcmp(argv[0], "zero"))   cmdZero(argv[1]);
+    else if (!strcmp(argv[0], "park"))   rotzero::park();
+    else if (!strcmp(argv[0], "settings")) settings::report();
+    else if (!strcmp(argv[0], "forget")) { settings::forgetCalib(); limits::begin(); Out.println(F("OK stored calib erased (profile values in use)")); }
     else if (!strcmp(argv[0], "stop"))   { safety::userStop(F("command"), micros()); Out.println(F("OK stop")); }
     else if (!strcmp(argv[0], "safety")) safety::report();
     else if (!strcmp(argv[0], "wdtest")) safety::watchdogTest();

@@ -49,7 +49,9 @@ wait for the `OK`/`ERR` line with its id, ignoring everything else in between.
 | `st` | `OK t=<ms> state=<STATE> busy=<6 x 0/1> pos=<p1>,...,<p6> homed=<6 x 0/1>` |
 | `stream <ms>` / `stream off` / `stream` | Start (20–10000 ms), stop, or show the status stream |
 | `status` | firmware, profile, state, loops/s, maxloop_us, isr_max_us, uptime_s, st_skipped |
-| `limits` | `OK limits calibrated=<0/1> source=profile|calib active=<0/1> front_max=.. gap_<A>/<B>=.. margin=.. extra=<mm per carriage> span_tol=.. range_now=<axis>:<lo>..<hi>,...` (`?` = no limit known) |
+| `settings` | `OK settings eeprom=valid|empty calib=<0/1> [front_max=.. gap1=.. gap2=..] parked=<0/1>` |
+| `zero <1|3|5|all>` / `park` / `forget` | rotation zero, park before power-off, erase stored calib |
+| `limits` | `OK limits calibrated=<0/1> source=profile|calib|eeprom active=<0/1> front_max=.. gap_<A>/<B>=.. margin=.. extra=<mm per carriage> span_tol=.. range_now=<axis>:<lo>..<hi>,...` (`?` = no limit known) |
 
 Status line (stream):
 ```
@@ -58,7 +60,8 @@ ST t=1249 state=READY busy=110000 pos=157.95,13.17,0.00,0.00,0.00,0.00 homed=010
 - `t` milliseconds since start (for plotting, and to detect a restart).
 - `busy` one digit per axis in axis order, 1 = moving.
 - `pos` positions in axis order, in the units from `info` (mm or degrees, 2 decimals).
-- `homed` one digit per axis, 1 = position is measured from a real zero (fw 2.1+).
+- `homed` one digit per axis, 1 = position is measured from a real zero (translation: homed,
+  fw 2.1+; rotation: zero set or restored after parking, fw 2.5+).
 
 If the USB send buffer does not have room for a whole `ST` line, that line is skipped
 (and counted in `st_skipped`) instead of making the robot wait. A program must therefore
@@ -93,6 +96,9 @@ the order of `info`. Units: translation mm and mm/s; rotation degrees and rpm.
 | `EV calib measured t=<s> front_max=<mm> gap1=<mm> gap2=<mm>` | All values measured |
 | `EV calib rejected <name>=<mm> expected <mm> (<dev> mm, lost steps?)` | Value too far from the profile value |
 | `EV calib stored` / `EV calib not stored (previous values kept)` | Result of the check |
+| `EV settings none stored (using profile values)` | EEPROM empty or invalid at startup |
+| `EV rotation zero restored (robot was parked)` / `EV rotation zero unknown ...` | Startup: rotation zeros |
+| `EV park done: safe to power off ...` / `EV park aborted` | Result of `park` |
 | `EV calib re-homing` | calib finished; automatic `home` follows (its EV home lines) |
 | `EV calib aborted (previous values kept)` | Stopped by `stop`, encoder or fault |
 | `EV calib failed calib <axis>: <why>` | Switch not found / implausible gap; followed by FAULT |
