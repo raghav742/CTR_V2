@@ -1,6 +1,6 @@
 #pragma once
 // Firmware version: <phase>.<step>.<patch>
-#define FW_VERSION "3.7.1"
+#define FW_VERSION "4.3.1"
 
 // Serial protocol (docs/protocol.md). Bump PROTO_VERSION when a
 // laptop program would need changing to keep working.

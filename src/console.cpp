@@ -32,6 +32,7 @@ namespace {
   bool    overflow = false;
   bool    watchOn  = false;
   uint32_t lastCmdMs = 0;
+  uint16_t hbMs = 0;                  // heartbeat watch (step 4.3): 0 = off
 
   // Status stream ("stream <ms>"): one ST line every period.
   // If the send buffer has no room, the line is skipped (counted),
@@ -48,6 +49,7 @@ namespace {
     Out.println(F("  status            firmware, profile, state, loop speed"));
     Out.println(F("  info              protocol version, axes, units, switches (for programs)"));
     Out.println(F("  ping              reply 'OK pong' (link check)"));
+    Out.println(F("  hb <ms>|0         heartbeat: stop motion if no command for <ms>"));
     Out.println(F("  st                one status line: state, busy axes, positions"));
     Out.println(F("  stream <ms>|off   status line every <ms> (20..10000)"));
     Out.println(F("  state             current state (and fault reason)"));
@@ -149,6 +151,14 @@ namespace {
     bool on = !strcmp(a, "on");
     if (which == 0) attract::setEnabled(on); else ui::setVisitorMode(on);
     Out.print(which == 0 ? F("OK attract ") : F("OK visitor ")); Out.println(on ? F("on") : F("off"));
+  }
+
+  // hb <ms>: stop all motion if no command arrives for <ms> while something moves
+  void cmdHeartbeat(const char* a) {
+    long ms = a ? atol(a) : -1;
+    if (ms != 0 && (ms < 200 || ms > 10000)) { Out.println(F("ERR usage: hb <200..10000 ms>|0")); return; }
+    hbMs = ms;
+    Out.print(F("OK hb=")); Out.println(hbMs);
   }
 
   void cmdZero(const char* a) {
@@ -355,6 +365,7 @@ namespace {
     else if (!strcmp(argv[0], "status")) cmdStatus();
     else if (!strcmp(argv[0], "info"))   cmdInfo();
     else if (!strcmp(argv[0], "ping"))   Out.println(F("OK pong"));
+    else if (!strcmp(argv[0], "hb"))     cmdHeartbeat(argv[1]);
     else if (!strcmp(argv[0], "st"))     { Out.print(F("OK ")); printStatusFields(); }
     else if (!strcmp(argv[0], "stream")) cmdStream(argv[1]);
     else if (!strcmp(argv[0], "state"))  sys::report();
@@ -416,6 +427,18 @@ void update() {
     }
   }
   updateStream();
+
+  // Heartbeat (step 4.3): the laptop went silent while the robot moves -> stop.
+  // Not a fault: the watch switches itself off and the robot is usable as normal.
+  if (hbMs && millis() - lastCmdMs > hbMs) {
+    if (motion::anyBusy() || demo::active() || homing::active() || calib::active() || rotzero::parking()) {
+      motion::stopAll(F("heartbeat lost"));
+      Out.print(F("EV heartbeat lost: no command for ")); Out.print(hbMs); Out.println(F(" ms, motion stopped"));
+    } else {
+      Out.println(F("EV heartbeat lost: watch off"));
+    }
+    hbMs = 0;
+  }
 }
 
 bool watching() { return watchOn; }

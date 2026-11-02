@@ -10,7 +10,7 @@ Firmware version at last update: **1.5.0** (Phase 1, step 5 of 6).
 
 ---
 
-## Project status (firmware 3.7.1, 2026-11-02)
+## Project status (firmware 4.3.1, 2026-11-02)
 | Phase | Content | State |
 |---|---|---|
 | 0 | Project setup, hardware profile | done |
@@ -18,7 +18,7 @@ Firmware version at last update: **1.5.0** (Phase 1, step 5 of 6).
 | 2 | Homing, calibration, travel limits, rotation zero, parking, EEPROM | done, tested on V1 (position accuracy limited by V1 slip) |
 | 3 | OLED UI and menu, jog, demos, attract, record & replay, visitor mode, safety demo | done, tested on V1 |
 | — | V1 restrictions (decision D13): 10 mm/s, 100 rpm, 40 % acceleration, no limit calibration, +20 mm between carriages | in the V1 profile |
-| 4 | Laptop control centre | next |
+| 4 | Laptop control centre | done: app, fake robot, heartbeat, CSV recording |
 | 5 | V2 migration (TFT, joystick, E-stop, new profile) | after the V2 hardware |
 
 ## 1. Starting point: the V1 firmware
@@ -54,7 +54,8 @@ CTRV2.0/
 │   └─ version.h         firmware version, protocol version, console baud rate
 ├─ src/                the program (one module = one .h + one .cpp)
 ├─ reference_v1/       Casper's code, read-only, not compiled
-└─ docs/               this file, devlog, decisions, pin map, protocol
+├─ docs/               this file, devlog, decisions, pin map, protocol
+└─ laptop/             control centre app (Python, phase 4), README inside
 ```
 
 **Hardware profile (decision D1).** Program code never contains a pin number. It always
@@ -617,7 +618,8 @@ a fault or any state change; reports `EV demo stopped (...) loops=n`. Programs: 
 Wave, Spin. The UI shows a program list and a "DEMO RUNNING" screen.
 
 ### Attract mode, record & replay, visitor mode (Steps 3.5–3.7)
-- **Attract** (`attract.cpp`): idle = no motion, no encoder input (`ui::lastInputMs`) and no
+- **Attract** (`attract.cpp`): **off after every power-on** (fw 4.3.1); turned on in Service or
+  with `attract on`. Idle = no motion, no encoder input (`ui::lastInputMs`) and no
   console command (`console::lastCommandMs`) for `ATTRACT_IDLE_MS` (3 min) while READY with
   active limits -> `demo::start(next)`, cycling the programs. `ui::onTurn` stops it.
 - **Record** (`record.cpp`): poses = 6 axes x int16 in 0.1 mm / 0.1 deg (10 poses, 120 bytes),
@@ -633,6 +635,31 @@ Casper's melodies (click, beep, ok, boot, error, home) as note tables in flash, 
 `tone()` (Timer2; Timer1 is the step interrupt) and advanced by `buzzer::update()`. The buzzer
 watches the state machine itself: FAULT -> error melody, HOMING -> READY -> home melody.
 
+## 9e. Laptop control centre (Phase 4, folder `laptop/`)
+
+A Python desktop app; the robot is fully usable without it. It speaks the serial protocol
+(section 8, `docs/protocol.md`) and nothing else, so it works for V1 and V2 alike (the axis
+names and units come from the `info` reply).
+- **`protocol.py`**: `RobotLink` reads lines in a background thread into a queue; the GUI
+  collects them with `poll()` every 20 ms (Qt widgets may only be used from the GUI thread).
+  Every command is sent with a request id (`#n cmd`); replies with that id remove it from the
+  pending list. `parse_status()` turns `ST` lines into state, positions, busy and homed flags.
+- **`fake_robot.py`**: same interface as the serial port (`readline`, `write`); simulates the
+  firmware's replies, events, motion and stream, so the app can be developed without hardware.
+- **`app.py`**: connection bar; STOP button (and Esc); command buttons; jog; table and plots
+  fed by the 10 Hz status stream; colour-coded log; command line; log file of all traffic.
+- Opening the USB port restarts the Arduino: the app waits for `EV boot` (max 4 s), then sends
+  `info`, `stream 100` and `hb 1500`.
+- **Heartbeat (Step 4.3, decision D14):** the app pings every 0.5 s (round-trip time shown as
+  the link indicator; pings are not logged). Firmware (`console.cpp`): every command resets the
+  timer; if `hb` ms pass without one while something moves, `motion::stopAll("heartbeat lost")`
+  stops everything (demo, homing, calib, park stop through the stop counter), then the watch
+  switches itself off. Not a FAULT.
+- **Measurement (Step 4.4, `recorder.py`):** while recording, the stream rate is raised
+  (up to 50 per second); each `ST` line becomes a CSV row (PC time, robot time, state, six
+  positions, busy flags) and each `EV` line a row with only the event text, so events sit at
+  their moment in the data. Optional Excel NL/DE format (`;` and decimal `,`).
+
 ## 10. Development and test method
 
 - Each step: design explained -> code -> compiled -> simulator (where possible) -> robot test
@@ -645,14 +672,14 @@ watches the state machine itself: FAULT -> error melody, HOMING -> READY -> home
 - **Runtime diagnostic commands** (`chop`, `ms`, `cur`) allow testing driver settings
   without reflashing; this is how the StealthChop slip was diagnosed in minutes.
 
-## 11. Console commands (firmware 3.7.0)
+## 11. Console commands (firmware 4.3.0)
 ```
 help  status  state  ack  safety  wdtest  inputs  watch on|off  led g|b|c|r|off [slow|fast]
 drivers  move <1-6> <amount> [speed]  mv <axis>=<amount> ... [t=<s>] [v=<%>]
 stop  pos  en <1-6|all>  dis <1-6|all>  isr reset  home [2|4|6]  calib  limits
 zero <1|3|5|all>  park  settings  forget  demo [1-3|stop]
 rec [add|play|clear]  attract on|off  visitor on|off
-info  ping  st  stream <ms>|off          (protocol, Step 1.6; prefix any command with #<id>)
+info  ping  hb <ms>|0  st  stream <ms>|off          (protocol, Step 1.6; prefix any command with #<id>)
 chop <1-6> stealth|spread|hybrid [speed]  ms <1-6> <2..32>  cur <1-6> <mA>
 ```
 Axes: 1 T1-Rot, 2 T1-Tra, 3 T2-Rot, 4 T2-Tra, 5 T3-Rot, 6 T3-Tra.

@@ -10,7 +10,7 @@
 
 namespace attract {
 namespace {
-  bool     on = true;
+  bool     on = false;              // off at every start; turned on in Service or with "attract on"
   bool     ours = false;            // current demo was started here
   uint8_t  next = 0;
   uint32_t lastBusy = 0;

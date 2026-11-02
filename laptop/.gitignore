@@ -1,0 +1,5 @@
+logs/
+__pycache__/
+*.pyc
+# measurements: commit the ones you want to keep on purpose
+recordings/

@@ -1,6 +1,7 @@
 #pragma once
 // ============================================================
-//  Attract mode (step 3.5)
+//  Attract mode (step 3.5). OFF after every power-on (2026-11-02):
+//  the operator turns it on (Service -> Attract, or "attract on").
 //  When the robot has been idle for ATTRACT_IDLE_MS (homed,
 //  READY, nothing moving, no encoder or console input), a demo
 //  starts by itself; each time the next program. Any touch of the

@@ -176,3 +176,24 @@ The robot is now operated stand-alone with the encoder and OLED, in Casper's vis
 **Simulation (with 5 mm/s / 30 rpm):** move requested at 20 mm/s ran at 5 mm/s (20 mm in 4.3 s), rotation requested at 120 rpm ran at 30 rpm; `calib` refused; T1 range 1.0..129.2 mm, T2 limited to T1 + 117.8 − 22 mm.
 **V2:** set the caps to the configuration values (or higher), `ACCEL_SCALE = 1`, `CALIB_ENABLED = true`, extra margins back to 0 / 0 / as needed, then run `calib` once and put the results into `hw_profile_v2.h`.
 **Test on robot:** _to fill in_
+
+## 2026-11-02 — Steps 4.1 + 4.2: Laptop control centre
+**What:** New folder `laptop/` (Python, separate from the firmware): desktop app `ctr_control` (PySide6 + pyqtgraph + pyserial). `protocol.py`: background reader thread, line parsing (`OK`/`ERR`/`EV`/`ST`, `#id` tags), request ids with pending list, `key=value` and status parsing. `fake_robot.py`: simulated robot speaking the same protocol (info, ping, st, stream, status, pos, home, move/mv with simple limits, stop, demo, park, zero, ack, limits) at V1 speeds, so the app can be developed and shown without hardware. `app.py`: connection bar (COM port or fake robot; waits for the Arduino's restart after opening the port, then `info` and `stream 100`), big STOP button (also the Esc key), Robot buttons (Home, Acknowledge, Zero, Park, Status, Limits), Demo selector, Jog panel, positions table (position, zero, moving), live plots of translation and rotation per tube (last 30 s), colour-coded log, command line with history, and a session log file (`laptop/logs/`). Start: `run_control_centre.bat` or `python -m ctr_control`; see `laptop/README.md`.
+**Test (headless, fake robot):** connect, info, stream, home, demo, STOP, a refused move: all replies matched by id, plots and table update, log file written (screenshot checked).
+**Test by Raghav (2026-11-02):** works as intended.
+
+## 2026-11-02 — Step 4.3: Heartbeat
+**What:** Firmware: command `hb <ms>` (200–10000, `hb 0` = off). While on, every received command resets a timer; if no command arrives for `<ms>` while something moves (move, demo, homing, calib, park), all motion stops (`EV stop heartbeat lost`, `EV heartbeat lost: no command for <ms> ms, motion stopped`). If nothing moves it only reports `watch off`. Either way the watch switches itself off, so the robot stays usable with the encoder and display. Not a FAULT. App: after connecting sends `hb 1500`, then `ping` every 0.5 s; link indicator in the connection bar ("link OK · <round-trip> ms" or "link: NO REPLY"); pings and pongs are kept out of the log view and log file; `hb 0` on disconnect. The fake robot implements `hb` too. Firmware 4.3.0, app 4.3.0.
+**Why:** If the laptop starts a long move or demo and then the app crashes, the laptop sleeps or the cable is pulled, the robot would otherwise keep moving unattended.
+**Simulation (firmware):** `hb 1000`, long rotation, pings every 0.5 s: keeps moving; pings stop: motion stopped 1 s after the last ping. Idle: "watch off" only. **App (fake robot):** link 30 ms; pings frozen during a demo -> demo stopped after 1.5 s; 0 ping lines in the log file.
+**Test on robot (2026-11-02):** works (Raghav).
+
+## 2026-11-02 — Step 4.4: Measurement recording (CSV)
+**What:** App box "Measurement (CSV)": rate 10 / 20 / 50 per second (the robot's status stream is switched to 100 / 50 / 20 ms while recording and back to 100 ms after), optional Excel NL/DE format (`;` and decimal `,`), Record / Stop recording with a live row counter. New module `recorder.py`: one row per status line (`pc_time_s, robot_ms, state`, six positions, `busy`) and one row per event (`event` column, positions empty), so stops, reaction times, faults and demo steps appear at the moment they happened. Files in `laptop/recordings/` (not committed by default). App 4.4.0.
+**Why:** Measurements for the report (motion profiles, repeatability, stop reaction) without copying from the serial monitor.
+**Test (fake robot):** 20 per second, Excel format: 55 rows in 3 s, events (demo start, stop, reaction) between the status rows; Excel-format numbers with decimal commas.
+**Test on robot:** _to fill in_
+
+## 2026-11-02 — Attract mode off by default (firmware 4.3.1)
+**What:** attract mode now starts **off** after every power-on (was on); it is turned on when needed with Service -> "Attract: on" or the console command `attract on`, and stays on until switched off or the next power-on.
+**Why:** Raghav: a demo should never start by itself unless the operator chose it (e.g. at an exhibition stand).

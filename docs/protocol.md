@@ -45,7 +45,8 @@ wait for the `OK`/`ERR` line with its id, ignoring everything else in between.
 | Command | Reply |
 |---|---|
 | `info` | `OK info proto=1 fw=1.6.0 profile="..." axes=T1-Rot:deg,T1-Tra:mm,... switches=T1-home,...` |
-| `ping` | `OK pong` (link check; basis of the heartbeat in step 4.4) |
+| `ping` | `OK pong` (link check) |
+| `hb <ms>` / `hb 0` | Heartbeat (fw 4.3+): stop all motion if no command arrives for `<ms>` (200–10000) while something moves; `OK hb=<ms>` |
 | `st` | `OK t=<ms> state=<STATE> busy=<6 x 0/1> pos=<p1>,...,<p6> homed=<6 x 0/1>` |
 | `stream <ms>` / `stream off` / `stream` | Start (20–10000 ms), stop, or show the status stream |
 | `status` | firmware, profile, state, loops/s, maxloop_us, isr_max_us, uptime_s, st_skipped, free_ram |
@@ -53,7 +54,7 @@ wait for the `OK`/`ERR` line with its id, ignoring everything else in between.
 | `zero <1|3|5|all>` / `park` / `forget` | rotation zero, park before power-off, erase stored calib |
 | `demo` / `demo <1-3>` / `demo stop` | list demos (`OK demos 1=Telescope ...`), run one in a loop, stop |
 | `rec` / `rec add|play|clear` | `OK rec poses=<n> [a1,..,a6] ...`; add current pose, play in a loop, clear |
-| `attract on|off` / `visitor on|off` | attract mode (demo after 3 min idle); short visitor menu |
+| `attract on|off` / `visitor on|off` | attract mode (demo after 3 min idle; off after power-on); short visitor menu |
 | `limits` | `OK limits calibrated=<0/1> source=profile|calib|eeprom active=<0/1> front_max=.. gap_<A>/<B>=.. margin=.. extra=<mm per carriage> calib=on|off speed_cap=<mm/s>,<rpm> span_rule=.. range_now=<axis>:<lo>..<hi>,...` (`?` = no limit known) |
 
 Status line (stream):
@@ -108,6 +109,7 @@ the order of `info`. Units: translation mm and mm/s; rotation degrees and rpm.
 | `EV attract start` | Attract mode started a demo |
 | `EV rec pose <n> saved` / `EV rec cleared` | Record & replay |
 | `EV ui rec play` / `EV ui safety demo` / `EV ui visitor on|off` | Started from the display menu |
+| `EV heartbeat lost: no command for <ms> ms, motion stopped` / `... watch off` | Heartbeat expired (preceded by `EV stop heartbeat lost` if something moved); the watch is off afterwards |
 | `EV calib re-homing` | calib finished; automatic `home` follows (its EV home lines) |
 | `EV calib aborted (previous values kept)` | Stopped by `stop`, encoder or fault |
 | `EV calib failed calib <axis>: <why>` | Switch not found / implausible gap; followed by FAULT |
