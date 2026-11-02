@@ -192,7 +192,7 @@ namespace {
   }
   const __FlashStringHelper* svcName(uint8_t i) {
     switch (i) {
-      case S_CALIB:   return F("Calibrate limits");
+      case S_CALIB:   return hw::CALIB_ENABLED ? F("Calibrate limits") : F("Calibrate (off V1)");
       case S_ZERO:    return F("Zero rotations");
       case S_PARK:    return F("Park (power off)");
       case S_DRIVERS: return F("Driver scan");
@@ -505,6 +505,7 @@ namespace {
   void selectService() {
     switch (svcSel) {
       case S_CALIB:
+        if (!hw::CALIB_ENABLED) { message(F("CALIBRATE"), F("Disabled on V1:"), F("profile values used"), Screen::Service); return; }
         if (!sys::homed()) { message(F("HOME FIRST"), F("Choose 'Home' first"), nullptr, Screen::Service); return; }
         Out.println(F("EV ui calib"));
         startJob(Job::Calib, calib::start(true));

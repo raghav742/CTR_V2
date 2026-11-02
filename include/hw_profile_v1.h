@@ -55,7 +55,9 @@ constexpr uint8_t CARRIAGE_ORDER[NUM_HOMED_AXES] = { 1, 3, 5 };   // T1, T2, T3
 // Extra distance each carriage keeps from its measured upper limit, on top of
 // LIMIT_MARGIN_MM (same order). T3: 50 mm (2026-10-30): at its full measured range
 // (~615 mm) T3 disturbed the front of the robot (T1 far switch was hit).
-constexpr float CARRIAGE_EXTRA_MARGIN_MM[NUM_HOMED_AXES] = { 0.0f, 0.0f, 50.0f };
+// V1: T1 and T2 keep 20 mm extra as well, because V1 positions can be off by up to
+// ~20 mm after slip (2026-11-02, see "V1 restrictions" below).
+constexpr float CARRIAGE_EXTRA_MARGIN_MM[NUM_HOMED_AXES] = { 20.0f, 20.0f, 50.0f };
 
 // Known travel values (measured with "calib" on 2026-10-30; smallest value of the
 // good runs = safe side). Loaded at startup, so the limits work right after
@@ -65,6 +67,16 @@ constexpr float CARRIAGE_EXTRA_MARGIN_MM[NUM_HOMED_AXES] = { 0.0f, 0.0f, 50.0f }
 //   gap T2/T3: 349.13 (runs with T1 slipping gave 354.5, 354.4)
 constexpr float CALIB_DEFAULT_FRONT_MAX_MM = 151.2f;
 constexpr float CALIB_DEFAULT_GAP_MM[NUM_HOMED_AXES - 1] = { 117.8f, 349.1f };
+
+// --- V1 restrictions (2026-11-02) ----------------------------
+// The V1 mechanics vibrate and slip, so V1 runs gently and without the limit
+// calibration. These are robot properties, not firmware behaviour: the V2
+// profile uses the full values (no caps, scale 1, calib enabled).
+constexpr float TRA_SPEED_CAP_MMPS = 10.0f;   // translation never faster (config max: 20)
+constexpr float ROT_SPEED_CAP_RPM  = 100.0f;  // rotation never faster (config max: 120); rotation is fine on V1
+constexpr float ACCEL_SCALE        = 0.4f;    // 40 % of the configured accelerations
+constexpr bool  CALIB_ENABLED      = false;   // "calib" drives carriages into each other:
+                                              // off; limits use CALIB_DEFAULT_* below
 
 // --- Mechanics ----------------------------------------------
 constexpr uint16_t FULLSTEPS_PER_REV = 200;     // 1.8 deg motors

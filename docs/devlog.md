@@ -165,3 +165,14 @@ The encoder figure is dominated by its 20 ms debounce; can be reduced later by s
 
 ## Phase 3 summary (2026-10-30, firmware 3.7.0)
 The robot is now operated stand-alone with the encoder and OLED, in Casper's visual style: non-blocking display (longest loop pass 2.6 ms with all axes at full speed) and buzzer, menu (Demo, Jog, Record, Home, Status, Safety demo, Service), jog per axis, three demo programs (Telescope, Wave, Spin) built from safe tube poses, attract mode, record & replay, visitor mode and a safety demo showing the measured stop time. Choreography and demo speeds are deliberately left for V2, where the mechanics are reliable; on V1 the slip makes fine-tuning pointless. Next: phase 4, the laptop control centre.
+
+## 2026-11-02 — V1 restrictions (firmware 3.7.1)
+**Finding (Raghav, robot tests up to phase 3):** the V1 mechanics vibrate a lot and have mechanical problems; the limit calibration is unreliable on V1 (slip), with a real risk of carriage clashes.
+**What:** V1-only restrictions in the hardware profile (`hw_profile_v1.h`, section "V1 restrictions"); the firmware logic is unchanged, so V2 keeps the full behaviour through its own profile values.
+- Speed caps for every move (console, jog, homing, demos, park, safety demo), applied centrally in `motion.cpp` (`vMaxSps`, `accSps`): translation max 20 -> **10 mm/s** (`TRA_SPEED_CAP_MMPS`), rotation max 120 -> **100 rpm** (`ROT_SPEED_CAP_RPM`; rotation is not a problem on V1), accelerations **40 %** (`ACCEL_SCALE`). (First set to 5 mm/s and 30 rpm; changed to 10 mm/s and 100 rpm at Raghav's request.)
+- Limit calibration off (`CALIB_ENABLED = false`): `calib` refused, menu item "Calibrate (off V1)"; a calib result stored in EEPROM is ignored. The limits use the measured profile values (`CALIB_DEFAULT_*`).
+- Extra distance from the carriage in front: T1 and T2 now 20 mm (were 0), T3 stays 50 mm (`CARRIAGE_EXTRA_MARGIN_MM`), because V1 positions can be off by up to ~20 mm after slip. T1's far-end limit is 20 mm lower as well.
+- `limits` shows `calib=on|off` and `speed_cap=`.
+**Simulation (with 5 mm/s / 30 rpm):** move requested at 20 mm/s ran at 5 mm/s (20 mm in 4.3 s), rotation requested at 120 rpm ran at 30 rpm; `calib` refused; T1 range 1.0..129.2 mm, T2 limited to T1 + 117.8 − 22 mm.
+**V2:** set the caps to the configuration values (or higher), `ACCEL_SCALE = 1`, `CALIB_ENABLED = true`, extra margins back to 0 / 0 / as needed, then run `calib` once and put the results into `hw_profile_v2.h`.
+**Test on robot:** _to fill in_

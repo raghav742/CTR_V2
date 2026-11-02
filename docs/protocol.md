@@ -54,7 +54,7 @@ wait for the `OK`/`ERR` line with its id, ignoring everything else in between.
 | `demo` / `demo <1-3>` / `demo stop` | list demos (`OK demos 1=Telescope ...`), run one in a loop, stop |
 | `rec` / `rec add|play|clear` | `OK rec poses=<n> [a1,..,a6] ...`; add current pose, play in a loop, clear |
 | `attract on|off` / `visitor on|off` | attract mode (demo after 3 min idle); short visitor menu |
-| `limits` | `OK limits calibrated=<0/1> source=profile|calib|eeprom active=<0/1> front_max=.. gap_<A>/<B>=.. margin=.. extra=<mm per carriage> span_tol=.. range_now=<axis>:<lo>..<hi>,...` (`?` = no limit known) |
+| `limits` | `OK limits calibrated=<0/1> source=profile|calib|eeprom active=<0/1> front_max=.. gap_<A>/<B>=.. margin=.. extra=<mm per carriage> calib=on|off speed_cap=<mm/s>,<rpm> span_rule=.. range_now=<axis>:<lo>..<hi>,...` (`?` = no limit known) |
 
 Status line (stream):
 ```

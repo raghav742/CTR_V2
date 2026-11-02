@@ -43,12 +43,14 @@ namespace {
   bool isTra(uint8_t i) { return hw::AXES[i].type == AxisType::Translation; }
 
   // Per-axis limits in microsteps/s and microsteps/s^2
-  float vMaxSps(uint8_t i) { return isTra(i) ? motion_cfg::TRA_SPEED_MAX * stepsPerUnit(i)
-                                             : motion_cfg::ROT_SPEED_MAX * 6.0f * stepsPerUnit(i); }
+  // Maximum speed and acceleration: configuration, limited by the robot's own caps
+  // (hardware profile: V1 runs gently because of vibration and slip)
+  float vMaxSps(uint8_t i) { return isTra(i) ? fminf(motion_cfg::TRA_SPEED_MAX, hw::TRA_SPEED_CAP_MMPS) * stepsPerUnit(i)
+                                             : fminf(motion_cfg::ROT_SPEED_MAX, hw::ROT_SPEED_CAP_RPM) * 6.0f * stepsPerUnit(i); }
   float vMinSps(uint8_t i) { return isTra(i) ? motion_cfg::TRA_SPEED_MIN * stepsPerUnit(i)
                                              : motion_cfg::ROT_SPEED_MIN * 6.0f * stepsPerUnit(i); }
-  float accSps(uint8_t i)  { return isTra(i) ? motion_cfg::TRA_ACCEL * stepsPerUnit(i)
-                                             : motion_cfg::ROT_ACCEL * 6.0f * stepsPerUnit(i); }
+  float accSps(uint8_t i)  { return hw::ACCEL_SCALE * (isTra(i) ? motion_cfg::TRA_ACCEL * stepsPerUnit(i)
+                                                                : motion_cfg::ROT_ACCEL * 6.0f * stepsPerUnit(i)); }
   // user speed (mm/s or rpm) -> microsteps/s
   float toSps(uint8_t i, float speed) { return isTra(i) ? speed * stepsPerUnit(i)
                                                         : speed * 6.0f * stepsPerUnit(i); }

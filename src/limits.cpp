@@ -52,7 +52,7 @@ void begin() {
   source = 0;
 
   // A calib result stored in EEPROM replaces them, if it is plausible
-  if (settings::calibStored()) {
+  if (hw::CALIB_ENABLED && settings::calibStored()) {
     float fm, g[C - 1];
     settings::calibValues(fm, g);
     bool ok = fabsf(fm - hw::CALIB_DEFAULT_FRONT_MAX_MM) <= motion_cfg::CALIB_MAX_DEVIATION_MM ||
@@ -170,6 +170,9 @@ void report() {
     Out.print(F(" extra="));
     for (uint8_t k = 0; k < C; k++) { if (k) Out.print(','); Out.print(hw::CARRIAGE_EXTRA_MARGIN_MM[k], 0); }
   }
+  Out.print(F(" calib=")); Out.print(hw::CALIB_ENABLED ? F("on") : F("off"));
+  Out.print(F(" speed_cap=")); Out.print(hw::TRA_SPEED_CAP_MMPS, 1); Out.print(F("mm/s,"));
+  Out.print(hw::ROT_SPEED_CAP_RPM, 0); Out.print(F("rpm"));
   Out.print(F(" span_rule=")); Out.print(motion_cfg::SPAN_RULE_FOR_MOVES ? F("on") : F("homing/calib only"));
   // Range each carriage could move to on its own right now
   float p[C];

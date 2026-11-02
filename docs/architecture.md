@@ -10,6 +10,17 @@ Firmware version at last update: **1.5.0** (Phase 1, step 5 of 6).
 
 ---
 
+## Project status (firmware 3.7.1, 2026-11-02)
+| Phase | Content | State |
+|---|---|---|
+| 0 | Project setup, hardware profile | done |
+| 1 | Non-blocking core: loop, step interrupt, coordinated moves, state machine, safety, protocol | done, tested on V1 |
+| 2 | Homing, calibration, travel limits, rotation zero, parking, EEPROM | done, tested on V1 (position accuracy limited by V1 slip) |
+| 3 | OLED UI and menu, jog, demos, attract, record & replay, visitor mode, safety demo | done, tested on V1 |
+| — | V1 restrictions (decision D13): 10 mm/s, 100 rpm, 40 % acceleration, no limit calibration, +20 mm between carriages | in the V1 profile |
+| 4 | Laptop control centre | next |
+| 5 | V2 migration (TFT, joystick, E-stop, new profile) | after the V2 hardware |
+
 ## 1. Starting point: the V1 firmware
 
 The V1 firmware (Casper de Ruiter, kept unchanged in `reference_v1/`, git tag `v1-baseline`)
@@ -663,5 +674,8 @@ moving backward, T1 approaches T2 and T2 approaches T3. Contact is prevented by 
   Check it when adding features; the V2 TFT needs a different drawing approach (no full
   frame buffer fits: 320x240).
 - Demo choreography and speeds to be refined on V2 (V1 slips).
+- V2 profile checklist (from the V1 restrictions, D13): speed caps = configuration values,
+  `ACCEL_SCALE = 1`, `CALIB_ENABLED = true`, extra margins as needed, then `calib` once and
+  copy the values into `CALIB_DEFAULT_*`.
 - Homing from far away is slow (up to ~30 s per carriage at 5 mm/s). Option: faster
   approach, then a slow final approach.

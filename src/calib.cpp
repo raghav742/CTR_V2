@@ -157,6 +157,10 @@ void begin() { running = false; }
 bool active() { return running; }
 
 bool start(bool quiet) {
+  if (!hw::CALIB_ENABLED) {
+    Out.println(F("ERR calib disabled for this robot (hardware profile); limits use the profile values"));
+    return false;
+  }
   if (running || homing::active()) { Out.println(F("ERR homing or calib already running")); return false; }
   if (motion::anyBusy())            { Out.println(F("ERR stop motion first")); return false; }
   for (uint8_t k = 0; k < C; k++)
