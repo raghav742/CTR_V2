@@ -36,7 +36,7 @@ class FakeRobot:
         self.last_cmd = time.time()
         self._lock = threading.Lock()
         self._run = True
-        self._emit("CTR V2 firmware 4.3.0 | profile: FAKE robot (laptop simulation)")
+        self._emit("CTR V2 firmware 4.3.0 | profile: FAKE robot (laptop stand-in)")
         self._emit("Display: not found (fake robot)")
         self._emit("Type 'help' for commands.")
         self._emit("EV boot reset_cause=power-on")
@@ -202,7 +202,7 @@ class FakeRobot:
         else:
             self._emit(f"ERR unknown command: {c}")
 
-    # ---------------- simulation ----------------
+    # ---------------- motion of the stand-in ----------------
     def _sim(self):
         last = time.time()
         last_st = 0

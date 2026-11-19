@@ -62,6 +62,7 @@ namespace {
     Out.println(F("  drivers           driver detection, current, microsteps"));
     Out.println(F("  move <1-6> <amount> [speed]   mm & mm/s (translation) or deg & rpm (rotation)"));
     Out.println(F("  mv <axis>=<amount> ... [t=<s>] [v=<%>]   coordinated move, all finish together"));
+    Out.println(F("  jog <1-6> +|- [%] / jog <1-6> <%> / jog <1-6> off   speed mode (joystick test)"));
     Out.println(F("  home [2|4|6]      home all translation axes (T3, T2, T1) or one"));
     Out.println(F("  calib             measure far end and gaps between carriages (after home)"));
     Out.println(F("  limits            measured limits and current range per carriage"));
@@ -93,6 +94,30 @@ namespace {
     int8_t i = parseAxis(a);
     if (i < 0 || !amt) { Out.println(F("ERR usage: move <1-6> <amount> [speed]")); return; }
     motion::moveRelative(i, atof(amt), spd ? atof(spd) : 0);
+  }
+
+  // Speed mode (joystick behaviour, testable without a joystick):
+  //   jog 2 + 40   start T1-Tra forward at 40 %     jog 2 70   change to 70 %
+  //   jog 2 off    brake to a stop                  (stop / knob: immediate stop)
+  void cmdJog(const char* a, const char* b, const char* c) {
+    int8_t i = parseAxis(a);
+    if (i < 0 || !b) { Out.println(F("ERR usage: jog <1-6> +|- [%] | jog <1-6> <%> | jog <1-6> off")); return; }
+    if (!strcmp(b, "off")) {
+      if (!motion::jogging(i)) { Out.println(F("ERR not in speed mode")); return; }
+      motion::jogRelease(i); Out.println(F("OK jog release")); return;
+    }
+    if (!strcmp(b, "+") || !strcmp(b, "-")) {
+      float pct = c ? atof(c) : 50.0f;
+      if (motion::jogStart(i, b[0] == '+' ? 1 : -1, pct / 100.0f, false)) {
+        Out.print(F("OK jog ")); Out.print(hw::AXES[i].name); Out.print(' '); Out.print(b);
+        Out.print(' '); Out.print(pct, 0); Out.println('%');
+      }
+      return;
+    }
+    if (!motion::jogging(i)) { Out.println(F("ERR not in speed mode (start with + or -)")); return; }
+    float pct = atof(b);
+    motion::jogSpeed(i, pct / 100.0f);
+    Out.print(F("OK jog speed ")); Out.print(pct, 0); Out.println('%');
   }
 
   // mv 2=30 4=30 6=30 [t=5] [v=50]
@@ -376,6 +401,7 @@ namespace {
     else if (!strcmp(argv[0], "drivers")) drivers::report();
     else if (!strcmp(argv[0], "move"))   cmdMove(argv[1], argv[2], argv[3]);
     else if (!strcmp(argv[0], "mv"))     cmdMv(argc, argv);
+    else if (!strcmp(argv[0], "jog"))    cmdJog(argv[1], argv[2], argv[3]);
     else if (!strcmp(argv[0], "home"))   cmdHome(argv[1]);
     else if (!strcmp(argv[0], "calib"))  calib::start();
     else if (!strcmp(argv[0], "limits")) limits::report();

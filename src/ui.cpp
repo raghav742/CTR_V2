@@ -18,6 +18,7 @@
 #include "attract.h"
 #include "safety.h"
 #include "encoder.h"
+#include "joystick.h"
 
 // ============================================================
 //  Screen manager (steps 3.1, 3.2)
@@ -90,7 +91,7 @@ namespace {
   uint32_t msgSince = 0;
   Screen   msgReturn = Screen::Menu;
 
-  Adafruit_SSD1306& g() { return display::gfx(); }
+  display::Gfx& g() { return display::gfx(); }
 
   void go(Screen s) { screen = s; screenSince = millis(); dirty = true; }
 
@@ -339,6 +340,68 @@ namespace {
     if (motion::moveGroup(amount, mask, 30, 0, 0, true)) go(Screen::SafetyDemo);
     else message(F("NOT POSSIBLE"), F("See serial log"), nullptr);
   }
+
+#if HW_HAS_JOYSTICK
+  // ---- Joystick in the Jog screen (step 5.3, UNTESTED ON HARDWARE) ----
+  // The stick moves the tube of the selected axis in speed mode:
+  //   Y (up/down)    -> translation of that tube (up = forward)
+  //   X (left/right) -> rotation of that tube
+  // Switched joystick: fixed speed (JOY_SWITCHED_SPEED_PCT); analog: speed
+  // follows the deflection. Release or reverse = brake to a stop. After a
+  // STOP, a fault or reaching a limit, the stick must return to the centre
+  // before it moves anything again (no surprise restart).
+  int8_t joyDir[2] = { 0, 0 };        // [0] rotation (X), [1] translation (Y): direction we started
+  bool   joyReleased[2] = { false, false };
+  bool   joyWaitCentre = false;
+
+  void joyReleaseAll() {
+    for (uint8_t s = 0; s < 2; s++) {
+      if (joyDir[s]) motion::jogRelease((jogAxis / 2) * 2 + s);
+      joyDir[s] = 0;
+    }
+  }
+
+  void joyAxis(uint8_t slot, uint8_t axis, int8_t defl) {
+    int8_t dir = defl > 0 ? 1 : defl < 0 ? -1 : 0;
+    float frac = (hw::JOYSTICK_TYPE == JoystickType::Switched)
+                 ? motion_cfg::JOY_SWITCHED_SPEED_PCT / 100.0f : abs(defl) / 100.0f;
+    if (joyDir[slot] != 0) {                          // a joystick move is running on this axis
+      if (!motion::busy(axis)) {                      // it has ended
+        if (!joyReleased[slot] && dir != 0) {          // ...by itself: travel limit reached
+          joyWaitCentre = true;
+          limitFlashUntil = millis() + 1000;
+          buzzer::play(buzzer::Sound::Beep);
+        }
+        joyDir[slot] = 0;
+        return;
+      }
+      if (dir == joyDir[slot] && !joyReleased[slot]) motion::jogSpeed(axis, frac);
+      else if (!joyReleased[slot]) { motion::jogRelease(axis); joyReleased[slot] = true; }
+      return;
+    }
+    if (dir == 0 || joyWaitCentre || motion::busy(axis)) return;
+    if (motion::jogStart(axis, dir, frac)) {
+      joyDir[slot] = dir;
+      joyReleased[slot] = false;
+    } else {                                           // refused (limit, state): wait for centre
+      joyWaitCentre = true;
+      limitFlashUntil = millis() + 1000;
+      buzzer::play(buzzer::Sound::Beep);
+    }
+  }
+
+  void joyUpdate(bool stopped) {
+    if (stopped) {                                     // STOP / fault: forget, wait for centre
+      joyDir[0] = joyDir[1] = 0;
+      joyWaitCentre = !joystick::centred();
+    }
+    if (!joystick::centred()) { lastInput = millis(); dirty = true; }
+    if (joyWaitCentre && joystick::centred()) joyWaitCentre = false;
+    uint8_t tube = jogAxis / 2;
+    joyAxis(0, tube * 2,     joystick::x());
+    joyAxis(1, tube * 2 + 1, joystick::y());
+  }
+#endif
 
   // Jog screen: axis, large live position, current range, step size
   bool drawJog(uint8_t part) {
@@ -617,10 +680,17 @@ namespace {
     }
     if (screen == Screen::Message && millis() - msgSince > MESSAGE_MS) { go(msgReturn); return; }
 
+#if HW_HAS_JOYSTICK
+    if (screen != Screen::Jog) joyReleaseAll();      // leaving the jog screen ends joystick motion
+#endif
     // Jog: a stop (press while moving, or a fault) drops the queued steps;
     // otherwise send the queued distance as one move when the axis is free
     if (screen == Screen::Jog) {
-      if (motion::stopCount() != jogStops) { jogStops = motion::stopCount(); jogPending = 0; }
+      bool stopped = motion::stopCount() != jogStops;
+      if (stopped) { jogStops = motion::stopCount(); jogPending = 0; }
+#if HW_HAS_JOYSTICK
+      joyUpdate(stopped);
+#endif
       if (jogPending != 0 && !motion::busy(jogAxis)) {
         float amount = jogPending;
         jogPending = 0;

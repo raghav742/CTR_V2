@@ -47,19 +47,23 @@ them; homing one carriage at a time (D8) and the software limits (D9) handle thi
 2 (interrupt, reserved for E-stop on V2), 7, 12, 13, 41*, 43*, 51, 52, 53, A0–A15.
 \* PCB switch inputs without a switch on V1.
 
-## V2 additions (planned, see firmware plan)
+## V2 additions (as in `hw_profile_v2.h`, prepared 2026-11-19, UNTESTED)
 
 | Pin | Function |
 |---|---|
-| 51 / 52 / 53 | TFT MOSI / SCK / CS (hardware SPI) |
+| 51 / 52 / 53 | TFT MOSI / SCK / CS (hardware SPI, Adafruit 1770 ILI9341) |
 | 12 / 13 | TFT D/C / reset |
-| 7 | TFT backlight (PWM) |
-| A2–A5 | Resistive touch |
-| A0/A1 or 4 digital inputs | APEM joystick (type to confirm) |
-| 2 | Emergency-stop input (if fitted) |
+| 7 | TFT backlight (HIGH = on) |
+| — | Touch not used (decision D15) |
+| A0 / A1 / A2 / A3 | Joystick up / down / left / right, switched type: contact to GND, internal pull-ups |
+| A0 / A1 | Joystick X / Y if the analog type is fitted (set `JOYSTICK_TYPE = Analog`) |
+| 49 | Encoder red LED (after the cable correction below) |
+| 50 | **Conflict:** blue LED vs SPI MISO (taken over by the SPI bus); blue unused on V2 unless rewired to a free pin |
+| 2 | Free (no emergency stop on V2) |
 
 ## V2 hardware corrections
 
 | Item | Change | Reason |
 |---|---|---|
 | Encoder cable | Swap "+" and red: "+" to 5 V, red cathode to pin 49 | V1 has "+" on pin 49 and no red LED |
+| Encoder blue LED (optional) | Move from pin 50 to a free pin (e.g. A8), set `PIN_LED_B` / `LED_HAS_BLUE` | Pin 50 is SPI MISO, used by the TFT bus |

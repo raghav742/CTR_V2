@@ -7,6 +7,7 @@
 #include "limit_switches.h"
 #include "system_state.h"
 #include "safety.h"
+#include "limits.h"
 
 // ============================================================
 //  Coordinated motion with a shared "progress" profile.
@@ -34,6 +35,9 @@ namespace {
     float    ap;          // progress acceleration (1/s^2)
     uint32_t startMs;
     bool     quiet;       // internal move (homing): no OK / EV lines
+    bool     jog;         // speed mode: vpMax may change while moving
+    bool     braking;     // speed mode released: brake, then stop
+    float    vpFull;      // speed mode: progress speed at 100 %
   };
   Group    groups[N];               // at most one group per axis
   int8_t   axisGroup[N];            // group of each axis, -1 = idle
@@ -178,6 +182,9 @@ bool moveGroup(const float amount[], uint8_t mask, float speedPct, float duratio
   g.vp    = g.vpMin;
   g.startMs = millis();
   g.quiet   = quiet;
+  g.jog     = false;
+  g.braking = false;
+  g.vpFull  = g.vpMax;
   g.active  = true;
 
   for (uint8_t i = 0; i < N; i++) {
@@ -225,6 +232,63 @@ void stopGroupOf(uint8_t axis) {
 }
 
 // ------------------------------------------------------------
+//  Speed mode (prepared for the V2 joystick, step 5.3)
+//  Implemented as a normal single-axis move to the end of the
+//  allowed range, so every existing check (state, safety, travel
+//  limits, stop, heartbeat) applies unchanged. Only the cruise
+//  speed may change while moving, and release brakes early.
+// ------------------------------------------------------------
+bool jogStart(uint8_t i, int8_t dir, float frac, bool quiet) {
+  if (i >= N || dir == 0) return false;
+  if (frac > 1.0f) frac = 1.0f;
+  if (frac < 0.05f) frac = 0.05f;
+  float amount;
+  if (isTra(i)) {
+    float lo = NAN, hi = NAN, p = position(i);
+    limits::range(i, lo, hi);
+    if (dir > 0) amount = isnan(hi) ? motion_cfg::TRA_MAX_MOVE_UNHOMED : hi - p;
+    else         amount = isnan(lo) ? -motion_cfg::TRA_MAX_MOVE_UNHOMED : lo - p;
+    if (amount * dir < 0.05f) {                      // already at the limit
+      if (!quiet) Out.println(F("ERR at the travel limit"));
+      return false;
+    }
+  } else {
+    amount = dir * motion_cfg::JOG_ROT_MAX_DEG;
+  }
+  float a[N] = { 0 };
+  a[i] = amount;
+  float full = isTra(i) ? fminf(motion_cfg::TRA_SPEED_MAX, hw::TRA_SPEED_CAP_MMPS)
+                        : fminf(motion_cfg::ROT_SPEED_MAX, hw::ROT_SPEED_CAP_RPM);
+  if (!moveGroup(a, _BV(i), 100, 0, full, quiet)) return false;
+  Group& g = groups[axisGroup[i]];
+  g.jog = true;
+  g.vpFull = g.vpMax;
+  g.vpMax = fmaxf(g.vpMin, g.vpFull * frac);
+  return true;
+}
+
+void jogSpeed(uint8_t i, float frac) {
+  if (i >= N || axisGroup[i] < 0) return;
+  Group& g = groups[axisGroup[i]];
+  if (!g.jog || g.braking) return;
+  if (frac > 1.0f) frac = 1.0f;
+  if (frac < 0.05f) frac = 0.05f;
+  g.vpMax = fmaxf(g.vpMin, g.vpFull * frac);
+}
+
+void jogRelease(uint8_t i) {
+  if (i >= N || axisGroup[i] < 0) return;
+  Group& g = groups[axisGroup[i]];
+  if (!g.jog) return;
+  g.braking = true;
+  g.vpMax = g.vpMin;
+}
+
+bool jogging(uint8_t i) {
+  return i < N && axisGroup[i] >= 0 && groups[axisGroup[i]].jog;
+}
+
+// ------------------------------------------------------------
 void update() {
   // --- shared progress ramps, every RAMP_UPDATE_US ---
   uint32_t now = micros();
@@ -247,9 +311,20 @@ void update() {
     float vStop = sqrtf(2.0f * g.ap * remP);
     float v = vUp;
     if (v > g.vpMax) v = g.vpMax;
+    // Speed mode: a lower set speed is reached along the ramp, not in one jump
+    // (normal moves never get here: their vpMax does not drop below vp)
+    float vDown = g.vp - g.ap * dt;
+    if (v < vDown) v = vDown;
     if (v > vStop)   v = vStop;
     if (v < g.vpMin) v = g.vpMin;
     g.vp = v;
+
+    // Speed mode released and slowed down to the start/stop speed: stop here
+    if (g.braking && v <= g.vpMin) {
+      for (uint8_t i = 0; i < N; i++) if (g.mask & _BV(i)) steppers::stop(i);
+      finishGroup(k, false);
+      continue;
+    }
 
     // One multiply per axis (k = distance x increment scale, set at start)
     for (uint8_t i = 0; i < N; i++) {

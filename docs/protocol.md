@@ -71,6 +71,11 @@ If the USB send buffer does not have room for a whole `ST` line, that line is sk
 (and counted in `st_skipped`) instead of making the robot wait. A program must therefore
 not assume every period produces a line; use `t`.
 
+## Speed mode (fw 5.0+)
+`jog <1-6> +|- [%]` starts a speed-mode move toward the travel limit (default 50 % of the
+maximum speed), `jog <1-6> <%>` changes the speed while it moves, `jog <1-6> off` brakes to a
+stop. `stop` stops at once as always. This is the joystick's motion, usable from a program.
+
 ## All commands
 See `help` on the robot, or `docs/architecture.md` section 11. Axes are numbered 1–6 in
 the order of `info`. Units: translation mm and mm/s; rotation degrees and rpm.

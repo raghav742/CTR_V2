@@ -32,6 +32,12 @@ constexpr uint8_t ROT_CHOPPER     = 0;      // rotation runs fine in StealthChop
 // translation move is capped to keep a typo from driving a carriage into the end.
 constexpr float TRA_MAX_MOVE_UNHOMED = 50.0f;   // mm
 
+// Speed mode (joystick / console "jog"): a rotation jog ends after this many
+// degrees even if the input is still held (translation ends at its travel limit)
+constexpr float JOG_ROT_MAX_DEG = 3600.0f;       // 10 turns
+// Switched joystick (on/off per direction): speed while a direction is held
+constexpr float JOY_SWITCHED_SPEED_PCT = 50.0f;
+
 // Ramp recalculation interval in the main loop
 constexpr uint16_t RAMP_UPDATE_US = 1000;
 

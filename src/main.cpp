@@ -28,6 +28,7 @@
 #include "record.h"
 #include "attract.h"
 #include "serial_io.h"
+#include "joystick.h"
 
 // Handle input events once per pass.
 //   encoder turn                    -> UI (menu selection)
@@ -93,13 +94,15 @@ void setup() {
   record::begin();
   rotzero::begin();
   buzzer::begin();
-  bool oled = display::begin();
+  bool disp = display::begin();
+  joystick::begin();
   ui::begin();
 
   Out.print(F("CTR V2 firmware ")); Out.print(FW_VERSION);
   Out.print(F(" | profile: ")); Out.println(hw::PROFILE_NAME);
   drivers::report();
-  Out.println(oled ? F("Display: OLED found") : F("Display: not found (check I2C SDA 20 / SCL 21)"));
+  if (hw::DISPLAY_TYPE == DisplayType::TFT_ILI9341) Out.println(F("Display: TFT (cannot be detected; check the screen)"));
+  else Out.println(disp ? F("Display: OLED found") : F("Display: not found (check I2C SDA 20 / SCL 21)"));
   Out.println(F("Type 'help' for commands."));
   safety::armWatchdog();      // last: from here the loop must keep running
 }
@@ -108,6 +111,7 @@ void loop() {
   loop_stats::update();
   safety::update();
   encoder::update();
+  joystick::update();
   limit_switches::update();
   homing::update();           // right after the switches: stop on the edge this pass
   calib::update();

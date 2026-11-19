@@ -50,10 +50,6 @@ void begin() {
     pinMode(a.pinEn,   OUTPUT); digitalWrite(a.pinEn,   HIGH);   // disabled until configured
     pinMode(a.pinDiag, INPUT);
 
-#ifdef SIM_FAKE_DRIVERS
-    // Simulator build only: no drivers attached, pretend they answered
-    isPresent[i] = true; enable(i, true); continue;
-#endif
     tmc[i].begin();
     isPresent[i] = (tmc[i].test_connection() == 0);
     if (isPresent[i]) {
@@ -80,15 +76,12 @@ uint16_t microsteps(uint8_t i) { return msCur[i]; }
 void setMicrosteps(uint8_t i, uint16_t ms) {
   if (i >= hw::NUM_AXES) return;
   msCur[i] = ms;
-#ifndef SIM_FAKE_DRIVERS
   if (isPresent[i]) tmc[i].microsteps(ms);
-#endif
 }
 
 void setChopper(uint8_t i, Chopper mode, float hybridSps) {
   if (i >= hw::NUM_AXES) return;
   chopCur[i] = mode; hybridCur[i] = hybridSps;
-#ifndef SIM_FAKE_DRIVERS
   if (!isPresent[i]) return;
   if (mode == Chopper::Spread) {
     tmc[i].en_spreadCycle(true);
@@ -105,14 +98,11 @@ void setChopper(uint8_t i, Chopper mode, float hybridSps) {
     }
     tmc[i].TPWMTHRS(thr);
   }
-#endif
 }
 
 void setCurrent(uint8_t i, uint16_t mA) {
   if (i >= hw::NUM_AXES) return;
-#ifndef SIM_FAKE_DRIVERS
   if (isPresent[i]) tmc[i].rms_current(mA);
-#endif
 }
 bool     enabled(uint8_t i)    { return i < hw::NUM_AXES && isEnabled[i]; }
 
@@ -122,20 +112,11 @@ void enable(uint8_t i, bool on) {
   isEnabled[i] = on && isPresent[i];
 }
 
-#ifdef SIM_FAKE_DRIVERS
-bool alive(uint8_t)           { return true; }
-bool overTemp(uint8_t)        { return false; }
-bool overTempWarning(uint8_t) { return false; }
-#else
 bool alive(uint8_t i)           { return isPresent[i] && tmc[i].test_connection() == 0; }
 bool overTemp(uint8_t i)        { return isPresent[i] && tmc[i].ot(); }
 bool overTempWarning(uint8_t i) { return isPresent[i] && tmc[i].otpw(); }
-#endif
 
 void report() {
-#ifdef SIM_FAKE_DRIVERS
-  Out.println(F("OK drv simulated")); return;
-#endif
   for (uint8_t i = 0; i < hw::NUM_AXES; i++) {
     Out.print(F("OK drv ")); Out.print(i + 1);
     Out.print(' ');         Out.print(hw::AXES[i].name);

@@ -108,6 +108,8 @@ constexpr bool    ENC_SW_PULLUP      = false;
 //   Red is not available on V1. Colours: green, blue, cyan.
 constexpr uint8_t PIN_ENC_SUPPLY = 49;
 constexpr bool    LED_HAS_RED    = false;
+constexpr bool    LED_HAS_BLUE   = true;
+constexpr uint8_t PIN_LED_R      = 0xFF;   // none on V1
 constexpr uint8_t PIN_LED_G      = 48;   // LOW = on
 constexpr uint8_t PIN_LED_B      = 50;   // LOW = on (also SPI MISO)
 constexpr bool    LED_ACTIVE_LOW = true;
@@ -117,3 +119,7 @@ constexpr DisplayType  DISPLAY_TYPE  = DisplayType::OLED_SSD1306;
 constexpr uint8_t      OLED_ADDR     = 0x3C;
 constexpr JoystickType JOYSTICK_TYPE = JoystickType::None;
 }  // namespace hw
+
+// Optional hardware compiled in (V2 adds a TFT and a joystick)
+#define HW_HAS_TFT      0
+#define HW_HAS_JOYSTICK 0

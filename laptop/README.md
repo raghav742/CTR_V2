@@ -44,6 +44,6 @@ Close any serial monitor (PlatformIO / Arduino IDE) first: only one program can 
 |---|---|
 | `ctr_control/app.py` | Main window |
 | `ctr_control/protocol.py` | Serial link: line parsing (OK/ERR/EV/ST), request ids, background reader |
-| `ctr_control/fake_robot.py` | Simulated robot with the same protocol (no hardware needed) |
+| `ctr_control/fake_robot.py` | Stand-in robot with the same protocol (no hardware needed) |
 | `ctr_control/recorder.py` | CSV recording of status stream and events |
 | `requirements.txt` | Python packages: PySide6, pyqtgraph, pyserial |

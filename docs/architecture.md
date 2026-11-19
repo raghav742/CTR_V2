@@ -6,11 +6,11 @@ It complements:
 - `decisions.md` — design decisions (D1, D2, ...) with alternatives
 - `pinmap.md` — all pins, V1 and planned V2
 
-Firmware version at last update: **1.5.0** (Phase 1, step 5 of 6).
+Firmware version at last update: **5.0.0** (end of the internship; see `HANDOVER.md`).
 
 ---
 
-## Project status (firmware 4.3.1, 2026-11-02)
+## Project status (firmware 5.0.0, 2026-11-19)
 | Phase | Content | State |
 |---|---|---|
 | 0 | Project setup, hardware profile | done |
@@ -19,7 +19,8 @@ Firmware version at last update: **1.5.0** (Phase 1, step 5 of 6).
 | 3 | OLED UI and menu, jog, demos, attract, record & replay, visitor mode, safety demo | done, tested on V1 |
 | — | V1 restrictions (decision D13): 10 mm/s, 100 rpm, 40 % acceleration, no limit calibration, +20 mm between carriages | in the V1 profile |
 | 4 | Laptop control centre | done: app, fake robot, heartbeat, CSV recording |
-| 5 | V2 migration (TFT, joystick, E-stop, new profile) | after the V2 hardware |
+| 5 | V2 migration: speed mode, V2 profile, TFT (2x V1 screens, no touch), joystick | **prepared, untested on hardware** (V2 not built during the internship); speed mode testable on V1; bring-up in `HANDOVER.md` |
+| 6 | Extras: StallGuard jam detection, 3D view on the laptop | not started; recommendations in `HANDOVER.md` |
 
 ## 1. Starting point: the V1 firmware
 
@@ -159,11 +160,9 @@ counts down. At zero the axis stops by itself, exactly on target, independent of
 loop.
 
 **Why the interrupt code looks unusual.** It runs 20,000 times per second on an 8-bit CPU.
-The first version (array of structs, 32-bit counters) used 85 % of the CPU in the
-simulator. The final version is unrolled per axis with templates (all addresses fixed at
-compile time), uses 16-bit accumulators and keeps interrupt-only data non-volatile:
-45 % worst case (all six axes at full speed, simulation); on the robot with three axes at
-20 mm/s the longest interrupt was 29.5 us of the 50 us tick.
+It is unrolled per axis with templates (all addresses fixed at compile time), uses
+16-bit accumulators and keeps interrupt-only data non-volatile, so it stays short: on the
+robot with three axes at 20 mm/s the longest interrupt was 29.5 us of the 50 us tick.
 
 **Self-measurement.** At the end of each interrupt, Timer1's counter shows how long the
 interrupt took; `status` shows the maximum as `isr_max_us`.
@@ -299,8 +298,8 @@ limit switches, drivers, watchdog ──► safety::update() ──► sys::faul
    switch does not cause a fault.
 3. **Reaction time** — `limit_switches` records `rawEdgeUs` (time of the raw signal change,
    before debouncing); `encoder` records `pressEdgeUs`. At a stop, safety prints
-   `EV reaction_ms = now - edge`. Simulation: switch 7.4 ms (5 ms debounce + loop),
-   encoder 20.7 ms (20 ms debounce + loop).
+   `EV reaction_ms = now - edge`. Robot: switch 10.2 ms (5 ms debounce + driver check),
+   `stop` 4.3 ms, encoder 20.7 / 21.9 ms (20 ms debounce + loop).
 4. **Driver health** — every 200 ms one driver in turn: still answering on UART
    (`drivers::alive`)? over-temperature? Either -> FAULT. One at a time because each UART
    read takes 1–2 ms.
@@ -391,11 +390,10 @@ fields once, as an `OK` reply. `info` describes the axes (names and units) and s
 the laptop program builds its display from the robot itself (works for V1 and V2).
 
 ### Ramp update optimisation
-Profiling in the simulator showed `motion::update()` taking ~1 ms of wall time per run when
-all six axes ran at maximum speed (the step interrupt then uses most of the CPU, so all main
-loop work runs slower). Per axis it did speed x distance, x scale, float-to-integer, every
+With all six axes at maximum speed the step interrupt uses most of the CPU, so all main
+loop work runs slower, and `motion::update()` became noticeable. Per axis it did speed x distance, x scale, float-to-integer, every
 millisecond. Now `k[i] = distance x scale` is computed once when the move starts and
-`steppers::setIncrement()` takes the integer directly: one multiply per axis. 1.0 -> 0.74 ms.
+`steppers::setIncrement()` takes the integer directly: one multiply per axis.
 
 ## 9. Homing (Step 2.1, decision D8)
 
@@ -558,9 +556,8 @@ move after a park. Commands: `settings` (show), `forget` (erase the stored calib
 
 ### Why the display needs care
 The OLED (128x64, SSD1306, I2C 0x3C) keeps a 1 KB frame in the Arduino's RAM. The Adafruit
-library draws into it pixel by pixel and sends it in one go with `display()`. Measured in
-the simulator: ~21 ms per status frame at rest, up to ~69 ms with all axes at full speed,
-during which the loop (and the safety checks) would wait.
+library draws into it pixel by pixel and sends it in one go with `display()`: 1 KB over I2C at
+400 kHz alone takes ~25 ms, during which the loop (and the safety checks) would wait.
 
 ### Three measures
 1. **Send in pieces** (`display.cpp`): `commit()` sets the address window to the whole
@@ -644,7 +641,7 @@ names and units come from the `info` reply).
   collects them with `poll()` every 20 ms (Qt widgets may only be used from the GUI thread).
   Every command is sent with a request id (`#n cmd`); replies with that id remove it from the
   pending list. `parse_status()` turns `ST` lines into state, positions, busy and homed flags.
-- **`fake_robot.py`**: same interface as the serial port (`readline`, `write`); simulates the
+- **`fake_robot.py`**: same interface as the serial port (`readline`, `write`); imitates the
   firmware's replies, events, motion and stream, so the app can be developed without hardware.
 - **`app.py`**: connection bar; STOP button (and Esc); command buttons; jog; table and plots
   fed by the 10 Hz status stream; colour-coded log; command line; log file of all traffic.
@@ -660,22 +657,49 @@ names and units come from the `info` reply).
   positions, busy flags) and each `EV` line a row with only the event text, so events sit at
   their moment in the data. Optional Excel NL/DE format (`;` and decimal `,`).
 
+## 9f. V2 preparation (Phase 5, firmware 5.0.0, UNTESTED ON HARDWARE)
+
+The V2 hardware was not built during the internship. Everything below compiles (`pio run -e v2`)
+but has not run on V2. Bring-up steps and tests: `HANDOVER.md`.
+
+- **Speed mode** (`motion.cpp`, decision D16): `jogStart(axis, dir, frac)` starts a normal
+  single-axis move to the end of the allowed range (translation: `limits::range`, or 50 mm when
+  unknown; rotation: 10 turns), marked as a jog. `jogSpeed()` changes its cruise speed (`vpMax`);
+  the ramp loop now also limits how fast the speed may drop (`vp - ap*dt`), so a lower speed is
+  reached along the ramp. `jogRelease()` sets the target speed to the start/stop speed; once
+  there, the axis stops and the move finishes normally. Normal moves are unaffected (their
+  `vpMax` never drops below the current speed). Console: `jog`.
+- **Joystick** (`joystick.cpp`, profile `JOYSTICK_TYPE`): switched (4 contacts, debounced) or
+  analog (dead zone, proportional). Used only in the Jog screen (`ui.cpp`, `joyUpdate`): Y moves
+  the selected tube's translation, X its rotation. Release or reverse = brake. After a stop,
+  fault or limit the stick must return to the centre before it moves anything again. Leaving
+  the Jog screen releases any joystick motion.
+- **TFT** (`display.cpp`, decision D15): `#if HW_HAS_TFT`. The screens still draw into a 128x64
+  frame in SSD1306 byte layout (`FrameBuffer`, 1 KB RAM, no I2C). `commit()` starts a pass over
+  128 pieces (8 columns x 8 rows); `update()` skips pieces whose 16-bit checksum is unchanged
+  and draws at most one changed piece per loop pass, 2x scaled (16x16 TFT pixels, runs of equal
+  colour sent with `writeColor`). Every 50 frames everything is redrawn once. The header and
+  help line are drawn once at start. Expected cost: about 0.5–1 ms per changed piece.
+- **Status LED** (`status_led.cpp`): optional red (`PIN_LED_R`) and optional blue
+  (`LED_HAS_BLUE`); without blue, blue shows as yellow and cyan as green.
+- **Profile switches:** `HW_HAS_TFT`, `HW_HAS_JOYSTICK` (macros in the profiles) compile the
+  V2-only code in or out, so the V1 build contains none of it.
+
 ## 10. Development and test method
 
-- Each step: design explained -> code -> compiled -> simulator (where possible) -> robot test
-  with pass criteria -> devlog entry + git commit.
-- **Simulator.** The firmware is also built for `simavr` (an ATmega2560 simulator) with
-  `-DSIM_FAKE_DRIVERS` (pretends the TMC2209s answer). A harness sends serial commands at
-  set times, can drive input pins (e.g. press a switch) and measures the exact cycle count
-  of the step interrupt. Used to measure interrupt cost (85 % -> 45 %), verify coordinated
-  timing and proportionality, and test fault, encoder stop and watchdog before the robot.
+- Each step: design explained -> code -> compiled -> robot test with pass criteria ->
+  devlog entry + git commit.
+- **Self-measurement.** The firmware reports its own timing (`status`: loops/s, longest
+  loop pass, longest interrupt) and the reaction time of every stop, so performance is
+  measured on the robot itself.
 - **Runtime diagnostic commands** (`chop`, `ms`, `cur`) allow testing driver settings
   without reflashing; this is how the StealthChop slip was diagnosed in minutes.
 
-## 11. Console commands (firmware 4.3.0)
+## 11. Console commands (firmware 5.0.0)
 ```
 help  status  state  ack  safety  wdtest  inputs  watch on|off  led g|b|c|r|off [slow|fast]
 drivers  move <1-6> <amount> [speed]  mv <axis>=<amount> ... [t=<s>] [v=<%>]
+jog <1-6> +|- [%]  jog <1-6> <%>  jog <1-6> off      (speed mode, fw 5.0)
 stop  pos  en <1-6|all>  dis <1-6|all>  isr reset  home [2|4|6]  calib  limits
 zero <1|3|5|all>  park  settings  forget  demo [1-3|stop]
 rec [add|play|clear]  attract on|off  visitor on|off
@@ -692,14 +716,13 @@ moving backward, T1 approaches T2 and T2 approaches T3. Contact is prevented by 
 - Longest loop pass on the robot is ~9 ms, caused by the driver health check (two blocking
   TMCStepper UART reads, ~4.5 ms each), not by printing. Accepted for the prototype and made
   rare: once per second (decision D7). A non-blocking UART reader would remove it.
-- Building a long line still costs CPU (~10 us per character): with all six axes at maximum
-  speed the simulator shows single passes of 3–8 ms when a move starts or ends.
-- With all six axes at maximum speed the step interrupt uses most of the CPU (simulator:
-  ~900 loop passes/s). Fine for now; revisit if demos need all axes at full speed together.
+- Building a long line still costs CPU (~10 us per character), so single loop passes
+  get longer when a move starts or ends.
+- With all six axes at maximum speed the step interrupt uses most of the CPU. Fine for now
+  (V1 is capped well below that); revisit if demos need all axes at full speed together.
 - Rotation zero is kept across power cycles only if the robot was parked (no sensor).
-- RAM: ~58 % static + 1 KB display buffer; `status` shows `free_ram` (2.3 KB at fw 3.7.0).
-  Check it when adding features; the V2 TFT needs a different drawing approach (no full
-  frame buffer fits: 320x240).
+- RAM: V1 ~55 % static + 1 KB display buffer (heap); V2 ~74 % static (frame buffer included);
+  `status` shows `free_ram` (about 2 KB on both). Check it when adding features.
 - Demo choreography and speeds to be refined on V2 (V1 slips).
 - V2 profile checklist (from the V1 restrictions, D13): speed caps = configuration values,
   `ACCEL_SCALE = 1`, `CALIB_ENABLED = true`, extra margins as needed, then `calib` once and

@@ -11,7 +11,7 @@
 ## D3 — Step pulses from one Timer1 interrupt, 20 kHz
 **Decision:** A single Timer1 interrupt at 20 kHz generates STEP pulses for all six axes using a 16-bit phase accumulator per axis. Ramps are calculated in the main loop (every 1 ms) and passed to the interrupt as a rate. Microstepping: 8 (translation), 16 (rotation), with driver interpolation to 256.
 **Why:** V1 generated pulses in blocking loops, freezing inputs and safety during motion. One timer for all axes keeps CPU use predictable; the accumulator gives each axis an independent speed. At 8 microsteps, 20 mm/s = 16,000 steps/s, under the 20,000 steps/s limit.
-**Measured (simulation):** worst case (all axes at max speed) 45 % CPU in the interrupt.
+**Measured (robot):** longest interrupt 29.5 us of the 50 us tick with three translation axes at 20 mm/s; main loop still ~9,000 passes/s.
 **Alternatives:** One hardware timer per axis (the Mega has only 4 usable 16-bit timers); AccelStepper/FastAccelStepper (blocking-free but pin restrictions on AVR; V1 step pins don't fit).
 
 ## D4 — Translation axes use SpreadCycle
@@ -55,7 +55,7 @@
 
 ## D11 — OLED updated in small pieces, text drawn byte-wise
 **Decision:** The OLED frame (1 KB) is sent in 16-byte I2C transfers, one per loop pass. Frequently redrawn content (text, bars) is written directly into the frame buffer byte by byte (`fastgfx`); screens are drawn in parts over several loop passes. Adafruit GFX is kept for drawing and for one-off graphics.
-**Why:** The safety loop must never pause long: a full Adafruit refresh blocked it for ~21 ms at rest and up to ~69 ms under full motion load (measured in simulation), longer than the 9 ms driver check we already accepted reluctantly (D7). With these three measures the longest loop pass with the display running is 2.6 ms under full load.
+**Why:** The safety loop must never pause long: a full Adafruit refresh sends the whole 1 KB frame at once (~25 ms over I2C at 400 kHz) plus pixel-by-pixel text drawing, longer than the 9 ms driver check we already accepted reluctantly (D7). With these three measures each loop pass only sends 16 bytes; on the robot the loop timing was unaffected by the display.
 **Alternatives:** Adafruit `display()` at a low refresh rate (still 25+ ms pauses); a display with its own controller/serial protocol (V2 TFT will need the same care: SPI is faster, but a 320x240 frame is much larger, so partial updates will be essential); updating only changed areas (more complex; not needed at this frame rate).
 
 ## D12 — Demo poses as outer position plus tube extensions
@@ -72,3 +72,19 @@
 **Decision:** The laptop enables a heartbeat watch (`hb 1500`) and pings every 0.5 s. If the robot hears nothing for 1.5 s while something moves, it stops all motion. It does not enter FAULT, and the watch switches itself off afterwards.
 **Why:** A lost laptop is not a hardware problem: after the stop the robot should remain usable from the encoder and display without acknowledging anything. Watching only during motion avoids stopping anything when the laptop is simply closed while the robot is idle. Every command counts as a sign of life, so normal traffic also keeps the watch satisfied. 1.5 s = three missed pings: tolerant of a busy laptop, short enough that a carriage moves at most ~15 mm (V1 10 mm/s).
 **Alternatives:** FAULT on loss (forces an acknowledge at the robot); heartbeat always active (would interfere with stand-alone use); DTR/USB-disconnect detection (not reliable on the Mega's USB chip and does not catch a frozen app).
+
+## D15 — V2 TFT shows the V1 screens at 2x, touch not used
+**Decision:** On V2 the 128x64 monochrome screens are kept and shown twice as large (256x128) on the 320x240 TFT; the menu stays on the encoder. The frame is sent in pieces and only changed pieces are redrawn.
+**Why:** Raghav (2026-11-19): use the TFT as a bigger screen, operated like V1. Reusing the tested screens means V2 needs no new UI code that cannot be tested without hardware, and the safety loop stays protected the same way as on V1 (small pieces per loop pass). The Mega cannot hold a colour frame buffer (150 KB).
+**Alternatives:** native colour TFT screens (better looking, but much new untestable code; recommended as a later improvement); touch control (not wanted; also needs calibration and 4 analog pins).
+
+## D16 — Joystick drives a speed mode built on normal moves
+**Decision:** Joystick motion is a normal single-axis move toward the travel limit whose cruise speed can change while moving and which brakes on release (`motion::jogStart/jogSpeed/jogRelease`).
+**Why:** All safety checks, limits, STOP and the heartbeat apply without new code paths; the speed mode itself can be tested on V1 with the `jog` command before any joystick exists. Needing the stick back in the centre after a stop prevents a surprise restart.
+**Alternatives:** a separate velocity controller (new path around the safety checks); repeated short moves (jerky, as the encoder jog).
+
+## D17 — End of the internship: V2 prepared, not built
+**Decision:** Phase 5 is delivered as prepared code (compiles, marked UNTESTED) plus a bring-up guide (`docs/HANDOVER.md`); phase 6 (StallGuard jam detection, 3D view) is left as recommendations.
+**Why:** The V2 hardware was delayed beyond the internship. Prepared code shortens the bring-up; keeping everything V2-specific behind the profile keeps the tested V1 firmware safe. Untested code is clearly labelled so it is not mistaken for finished work.
+**Alternatives:** stop at phase 4 (bring-up would start from zero); write all of phase 5 and 6 (more untestable code, higher risk of hidden errors).
+
